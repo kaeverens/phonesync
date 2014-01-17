@@ -4,9 +4,12 @@ function PhoneSync(params, callback) {
 		'updatesUrl':'', // URL of the API
 		'ready':function() { // called when the database is initialised
 		},
+		'syncDownloadsTimeout':60000,
 		'tables':[], // list of tables to be synced
 		'urls':{},
 		'onDownload':function() { // called when a new item is downloaded
+		},
+		'onSave':function() { // called when a downloaded item is saved
 		},
 		'onUpload':function() { // called when an item is uploaded
 		},
@@ -16,6 +19,8 @@ function PhoneSync(params, callback) {
 	$.extend(this.options, params);
 	this.db=false;
 	this.fs=false;
+	this.filePutQueue=[];
+	this.fileGetQueue=[];
 	this.loggedIn=false;
 	this.tables={};
 	this.cache={};
@@ -57,6 +62,8 @@ function PhoneSync(params, callback) {
 					{'create':true, 'exclusive':false},
 					function(root) {
 						that.fs=root;
+						clearTimeout(window.PhoneSync_timerSyncUploads);
+						clearTimeout(window.PhoneSync_timerSyncDownloads);
 						setTimeout(function() {
 							that.syncDownloads();
 							that.syncUploads();
@@ -74,6 +81,14 @@ function PhoneSync(params, callback) {
 			null
 		);
 	}
+	document.addEventListener('online', function() {
+		clearTimeout(window.PhoneSync_timerSyncUploads);
+		clearTimeout(window.PhoneSync_timerSyncDownloads);
+		setTimeout(function() {
+			that.syncDownloads();
+			that.syncUploads();
+		}, 100);
+	}, false);
 }
 PhoneSync.prototype.api=function(action, params, success, fail, noNetwork) {
 	var _v=1;
@@ -137,22 +152,52 @@ PhoneSync.prototype.api=function(action, params, success, fail, noNetwork) {
 	);
 }
 PhoneSync.prototype.get=function(key, callback) {
+if ('stockcategorys'==key)console.log('1 '+key);
 	if (this.cache[key]) {
+if ('stockcategorys'==key)console.log('6 '+JSON.stringify(this.cache[key]));
 		return callback(this.cache[key]);
 	}
 	var that=this;
+	for (var i=0;i<this.fileGetQueue.length;++i) {
+		if (this.fileGetQueue[i]==key) {
+			setTimeout(function() {
+if ('stockcategorys'==key)console.log('2 '+key);
+				that.get(key, callback);
+			}, 100);
+			return;
+		}
+	}
+	this.fileGetQueue.push(key);
+	var that=this;
+if ('stockcategorys'==key)console.log('3 '+key);
 	this.fileGetJSON(key,
 		function(obj) {
+if ('stockcategorys'==key)console.log('4 '+key);
+			var arr=[];
+			for (var i=0;i<that.fileGetQueue.length;++i) {
+				if (that.fileGetQueue[i]!=key) {
+					arr.push(that.fileGetQueue[i]);
+				}
+			}
+			that.fileGetQueue=arr;
 			that.cache[key]=obj;
-			return callback(obj);
+			callback(obj);
 		},
 		function() {
+if ('stockcategorys'==key)console.log('5 '+key);
+			var arr=[];
+			for (var i=0;i<that.fileGetQueue.length;++i) {
+				if (that.fileGetQueue[i]!=key) {
+					arr.push(that.fileGetQueue[i]);
+				}
+			}
+			that.fileGetQueue=arr;
 			callback(null);
 		}
 	);
 }
 PhoneSync.prototype.getAll=function(key, callback) {
-	var keys=[];
+	var keys=[], that=this;
 	if (this.cache[key]) {
 		var keys=this.cache[key].obj;
 	}
@@ -161,16 +206,21 @@ PhoneSync.prototype.getAll=function(key, callback) {
 			if (ret===undefined || ret===null) {
 				return;
 			}
-			keys=ret.obj||[];
+			that.getAll(key, callback);
 		});
+		return;
 	}
 	var rows=[];
+	var toGet=keys.length;
 	for (var i=0;i<keys.length;++i) {
 		this.get(key+'-'+keys[i], function(ret) {
 			rows.push(ret);
+			toGet--;
+			if (!toGet) {
+				callback(rows);
+			}
 		});
 	}
-	callback(rows);
 }
 PhoneSync.prototype.delete=function(key, callback, nosync) {
 	delete this.cache[key];
@@ -187,17 +237,28 @@ PhoneSync.prototype.delete=function(key, callback, nosync) {
 }
 PhoneSync.prototype.save=function(obj, callback, nosync) {
 	this.cache[obj.key]=obj;
+	var that=this;
 	if (/-/.test(obj.key)) {
 		var id=obj.obj && obj.obj.id ? obj.obj.id : obj.id;
-		this.idAdd(obj.key.replace(/-[^-]*$/, ''), id);
+		this.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
+			if (callback) {
+				callback();
+			}
+			if (!nosync) {
+				that.addToSyncUploads(obj.key);
+			}
+			that.filePutJSON(obj.key, obj);
+		});
 	}
-	if (callback) {
-		callback();
+	else {
+		if (callback) {
+			callback();
+		}
+		if (!nosync) {
+			this.addToSyncUploads(obj.key);
+		}
+		this.filePutJSON(obj.key, obj);
 	}
-	if (!nosync) {
-		this.addToSyncUploads(obj.key);
-	}
-	this.filePutJSON(obj.key, obj);
 }
 PhoneSync.prototype.addToSyncUploads=function(key) {
 	var table=key.replace(/-.*/, '');
@@ -223,7 +284,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 		that.syncUploads();
 	}, 100);
 }
-PhoneSync.prototype.idAdd=function(name, id) {
+PhoneSync.prototype.idAdd=function(name, id, callback) {
 	id=''+id;
 	var that=this;
 	this.get(name, function(ret) {
@@ -237,7 +298,12 @@ PhoneSync.prototype.idAdd=function(name, id) {
 			that.save({
 				'key':name,
 				'obj':ret.obj
-			}, false, true);
+			}, callback , true);
+		}
+		else {
+			if (callback) {
+				callback();
+			}
 		}
 	});
 }
@@ -275,7 +341,7 @@ PhoneSync.prototype.syncDownloads=function() {
 	this.api(
 		'syncDownloads', {},
 		function(ret) {
-			var deletes=[];
+			var deletes=[], changes=0;
 			$.each(ret, function(k, v) {
 				if (!$.isArray(v)) {
 					return;
@@ -291,6 +357,7 @@ PhoneSync.prototype.syncDownloads=function() {
 					) {
 						that.tables[k].lastUpdate=obj.last_edited;
 						tableUpdatesChanged=true;
+						changes++;
 					}
 					if (k!=='_deletes') {
 						(function(k, obj) {
@@ -298,21 +365,23 @@ PhoneSync.prototype.syncDownloads=function() {
 								if (ret===null) {
 									that.options.onDownload(k+'-'+obj.id, obj);
 								}
-								if (that.uuid==obj.uuid) {
+								if (that.uuid==obj.uuid) { // originally came from device
 									that.get(k+'-'+obj.id, function(ret) {
 										if (ret===null || ret.obj.uuid!=that.uuid) {
 											that.save({
 												'key':k+'-'+obj.id,
 												'obj':obj
 											}, false, true);
+											that.options.onSave(k+'-'+obj.id, obj);
 										}
 									});
 								}
-								else {
+								else { // created somewhere else
 									that.save({
 										'key':k+'-'+obj.id,
 										'obj':obj
 									}, false, true);
+									that.options.onSave(k+'-'+obj.id, obj);
 								}
 							});
 						})(k, obj);
@@ -324,16 +393,29 @@ PhoneSync.prototype.syncDownloads=function() {
 			});
 			for (var i=0;i<deletes.length;++i) {
 				that.delete(deletes[i].key);
+				changes++;
+			}
+			clearTimeout(window.PhoneSync_timerSyncDownloads);
+			if (changes) {
+				window.PhoneSync_timerSyncDownloads=setTimeout(function() {
+					that.syncDownloads();
+				}, 1);
+			}
+			else {
+				window.PhoneSync_timerSyncDownloads=setTimeout(function() {
+					that.syncDownloads();
+				}, that.options.syncDownloadsTimeout);
 			}
 		},
 		function(err) {
 			console.log('failed');
 			console.log(JSON.stringify(err));
+			clearTimeout(window.PhoneSync_timerSyncDownloads);
+			window.PhoneSync_timerSyncDownloads=setTimeout(function() {
+				that.syncDownloads();
+			}, that.options.syncDownloadsTimeout);
 		}
 	);
-	window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-		that.syncDownloads();
-	}, 60000);
 }
 PhoneSync.prototype.syncUploads=function() {
 	clearTimeout(window.PhoneSync_timerSyncUploads);
@@ -376,14 +458,54 @@ PhoneSync.prototype.syncUploads=function() {
 	});
 }
 PhoneSync.prototype.filePutJSON=function(name, obj) {
+	var that=this;
+	// { if a file is submitted, queue it and come back later
+	if (name && obj) {
+		for (var i=1;i<this.filePutQueue.length;++i) {
+			var f=this.filePutQueue[i];
+			if (f[0]==name) {
+				this.filePutQueue[i]
+					=this.filePutQueue[this.filePutQueue.length-1];
+				this.filePutQueue.pop();
+				break;
+			}
+		}
+		this.filePutQueue.push([name, obj]);
+		window.PhoneSync_timerFilePutQueue=setTimeout(function() {
+			that.filePutJSON()
+		}, 1);
+		return;
+	}
+	// }
+	// { check to see if there is already a fiile being written
+	if (this.filePutJSONLock) {
+		window.PhoneSync_timerFilePutQueue=setTimeout(function() {
+			that.filePutJSON()
+		}, 1);
+		return;
+	}
+	// }
+	// { write a file
+	this.filePutJSONLock=true;
+	var o=this.filePutQueue.shift();
+	var name=o[0], obj=o[1];
 	var json=JSON.stringify(obj);
 	this.fs.getFile(name, {'create':true, 'exclusive':false},
 		function(entry) {
 			entry.createWriter(function(writer) {
+				writer.onwriteend=function() {
+					that.filePutJSONLock=false;
+					if (that.filePutQueue.length) {
+						window.PhoneSync_timerFilePutQueue=setTimeout(function() {
+							that.filePutJSON()
+						}, 1);
+					}
+				}
 				writer.write(json);
 			});
 		}
 	);
+	// }
 }
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	this.fs.getFile(name, {'create':false, 'exclusive':false},

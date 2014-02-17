@@ -155,7 +155,6 @@ PhoneSync.prototype.api=function(action, params, success, fail, noNetwork) {
 }
 PhoneSync.prototype.get=function(key, callback) {
 	if (this.cache[key]) {
-if ('stockcategorys'==key)console.log('6 '+JSON.stringify(this.cache[key]));
 		return callback(this.cache[key]);
 	}
 	var that=this;
@@ -201,7 +200,7 @@ PhoneSync.prototype.getAll=function(key, callback) {
 	else {
 		this.get(key, function(ret) {
 			if (ret===undefined || ret===null) {
-				return;
+				return callback([]);
 			}
 			that.getAll(key, callback);
 		});
@@ -369,6 +368,7 @@ PhoneSync.prototype.syncDownloads=function() {
 												'key':k+'-'+obj.id,
 												'obj':obj
 											}, false, true);
+											console.log('object created on this device');
 											that.options.onSave(k+'-'+obj.id, obj);
 										}
 									});
@@ -378,6 +378,8 @@ PhoneSync.prototype.syncDownloads=function() {
 										'key':k+'-'+obj.id,
 										'obj':obj
 									}, false, true);
+									console.log('object created on a different device');
+									console.log(JSON.stringify(obj));
 									that.options.onSave(k+'-'+obj.id, obj);
 								}
 							});
@@ -406,7 +408,6 @@ PhoneSync.prototype.syncDownloads=function() {
 		},
 		function(err) {
 			console.log('failed');
-			console.log(JSON.stringify(err));
 			clearTimeout(window.PhoneSync_timerSyncDownloads);
 			window.PhoneSync_timerSyncDownloads=setTimeout(function() {
 				that.syncDownloads();
@@ -515,6 +516,12 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 	// }
 }
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
+	if (!this.fs) {
+		var that=this;
+		return setTimeout(function() {
+			that.fileGetJSON(name, success, fail);
+		}, 100);
+	}
 	this.fs.getFile(name, {'create':false, 'exclusive':false},
 		function(entry) {
 			entry.file(
@@ -538,11 +545,20 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	);
 }
 PhoneSync.prototype.nuke=function(callback) {
-	var directoryReader=this.fs.createReader();
+	/* var directoryReader=this.fs.createReader();
 	directoryReader.readEntries(function(entries) {
+		var toDelete=entries.length;
 		for (var i=0; i<entries.length; ++i) {
-			entries[i].remove();
+			entries[i].remove(function() {
+				toDelete--;
+				if (!toDelete) {
+					callback();
+				}
+			});
 		}
+	}); */
+	this.fs.removeRecursively(callback, function(err) {
+		console.log(JSON.stringify(err));
 	});
 	for (var i=0;i<this.options.tables.length;++i) {
 		this.tables[this.options.tables[i]]={
@@ -550,14 +566,16 @@ PhoneSync.prototype.nuke=function(callback) {
 		}
 	}
 	this.cache={};
-	callback();
 }
 PhoneSync.prototype.rekey=function(table, oldId, newId) {
+	if (oldId==newId) {
+		return;
+	}
 	var that=this;
 	this.get(table+'-'+oldId, function(obj) {
 		obj.key=table+'-'+newId;
 		obj.obj.id=newId;
-		that.save(obj);
+		that.save(obj, null, true);
 		that.delete(table+'-'+oldId);
 	});
 }

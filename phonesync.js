@@ -82,6 +82,7 @@ function PhoneSync(params, callback) {
 		);
 	}
 	document.addEventListener('online', function() {
+		console.log('resetting phonesync timers');
 		clearTimeout(window.PhoneSync_timerSyncUploads);
 		clearTimeout(window.PhoneSync_timerSyncDownloads);
 		setTimeout(function() {
@@ -426,7 +427,15 @@ PhoneSync.prototype.syncUploads=function() {
 		that.get(key, function(ret) {
 			window.PhoneSync_timerSyncUploads_uploading=true;
 			if (ret===null) {
-				console.error('cannot sync missing object '+key);
+				obj.keys.shift();
+				that.save(obj, function() { // remove this item from the queue
+					window.PhoneSync_timerSyncUploads_uploading=false;
+					clearTimeout(window.PhoneSync_timerSyncUploads);
+					window.PhoneSync_timerSyncUploads=setTimeout(function() {
+						that.syncUploads();
+					}, 15000);
+				}, true);
+				console.log('uploading item was missing. removed from queue');
 				return;
 			}
 			that.api(
@@ -445,7 +454,7 @@ PhoneSync.prototype.syncUploads=function() {
 					}, true);
 				},
 				function(ret) { // fail
-					console.warn('failed to sync upload. AJAX error');
+					console.log('PhoneSync: syncUploads() fail.');
 					console.log(JSON.stringify(ret));
 					window.PhoneSync_timerSyncUploads_uploading=false;
 					clearTimeout(window.PhoneSync_timerSyncUploads);

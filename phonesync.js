@@ -323,6 +323,7 @@ PhoneSync.prototype.idDel=function(name, id) {
 	});
 }
 PhoneSync.prototype.syncDownloads=function() {
+	console.log('starting a download sync');
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
 	var that=this;
 	if (!this.loggedIn) {
@@ -411,6 +412,7 @@ PhoneSync.prototype.syncDownloads=function() {
 	);
 }
 PhoneSync.prototype.syncUploads=function() {
+	console.log('starting an upload sync');
 	clearTimeout(window.PhoneSync_timerSyncUploads);
 	window.PhoneSync_timerSyncUploads=setTimeout(function() {
 		that.syncUploads();

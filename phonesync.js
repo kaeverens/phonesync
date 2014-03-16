@@ -101,7 +101,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 				'keys':[]
 			}
 		}
-		if ($.inArray(key, ret.keys)!=-1) {
+		if ($.inArray(key, ret.keys)>0) {
 			console.log('this item ('+key+') is already set to be uploaded');
 			return;
 		}
@@ -314,11 +314,12 @@ PhoneSync.prototype.idDel=function(name, id) {
 			if (id == ret.obj[i]) {
 				continue;
 			}
+			console.log(id+'|'+ret.obj[i]);
 			arr.push(ret.obj[i]);
 		}
 		that.save({
 			'key':name,
-			'obj':ret.obj
+			'obj':arr
 		}, false, true);
 	});
 }
@@ -387,6 +388,10 @@ PhoneSync.prototype.syncDownloads=function() {
 				}
 			});
 			for (var i=0;i<deletes.length;++i) {
+				if (deletes[i].key===undefined) {
+					deletes[i].key=deletes[i].table_name+'-'+deletes[i].item_id;
+				}
+			console.log(JSON.stringify(deletes[i]));
 				that.delete(deletes[i].key);
 				changes++;
 			}
@@ -419,6 +424,7 @@ PhoneSync.prototype.syncUploads=function() {
 	}, 15000);
 	var that=this;
 	if (window.PhoneSync_timerSyncUploads_uploading) {
+		console.log('phonesync syncUploads: already uploading');
 		return;
 	}
 	this.get('_syncUploads', function(obj) {

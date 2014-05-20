@@ -4,6 +4,7 @@ function PhoneSync(params, callback) {
 		'md5':false, // send MD5 checks
 		'timeout':10, // milliseconds
 		'updatesUrl':'', // URL of the API
+		'failedApiCallTimeout':10000,
 		'ready':function() { // called when the database is initialised
 		},
 		'syncDownloadsTimeout':60000,
@@ -32,6 +33,7 @@ function PhoneSync(params, callback) {
 	this.disableFS=false;
 	this.filePutQueue=[];
 	this.fileGetQueue=[];
+	console.log('networkInUse is false');
 	this.networkInUse=false;
 	this.loggedIn=false;
 	this.tables={};
@@ -136,14 +138,14 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 PhoneSync.prototype.api=function(action, params, success, fail, noNetwork) {
 	var that=this;
 	var _v=1;
-	if (window.device===undefined || window.device===null) {
+	if (navigator.connection.type==Connection.NONE) {
 		console.error('no network');
 		if (noNetwork) {
 			return noNetwork();
 		}
 		return setTimeout(function() {
-			this.api(action, params, success, fail);
-		}, that.options.timeout);
+			that.api(action, params, success, fail);
+		}, that.options.failedApiCallTimeout);
 	}
 	var uid=0;
 	if (window.userdata) {
@@ -225,9 +227,11 @@ PhoneSync.prototype.apiNext=function() {
 		return;
 	}
 	if (this.networkInUse) {
+		console.log('network is in use');
 		window.PhoneSync_timerApiCall=setTimeout(function() {
 			that.apiNext();
-		}, that.options.timeout);
+		}, that.options.failedApiCallTimeout);
+		return;
 	}
 	this.networkInUse=true;
 	this.options.onBeforeNetwork();
@@ -239,13 +243,9 @@ PhoneSync.prototype.apiNext=function() {
 			that.options.onNetwork();
 			if (!ret) {
 				console.error('error while sending request');
+				console.log(url, params, ret);
 				return fail({'err':'error while sending request'});
 			}
-			that.networkInUse=false;
-			clearTimeout(window.PhoneSync_timerApiCall);
-			window.PhoneSync_timerApiCall=setTimeout(function() {
-				that.apiNext();
-			}, that.options.timeout);
 			if (ret.error) {
 				fail(ret);
 			}
@@ -259,14 +259,16 @@ PhoneSync.prototype.apiNext=function() {
 				}
 			}
 		})
-		.fail(function() {
+		.fail(function(e) {
 			that.apiCalls.push(call);
+			fail();
+		})
+		.always(function(stuff) {
 			that.networkInUse=false;
 			clearTimeout(window.PhoneSync_timerApiCall);
 			window.PhoneSync_timerApiCall=setTimeout(function() {
 				that.apiNext();
-			}, that.options.timeout);
-			fail()
+			}, 1000);
 		});
 }
 PhoneSync.prototype.get=function(key, callback, download) {
@@ -588,10 +590,7 @@ PhoneSync.prototype.syncUploads=function() {
 	clearTimeout(window.PhoneSync_timerSyncUploads);
 	window.PhoneSync_timerSyncUploads=setTimeout(function() {
 		that.syncUploads();
-	}, that.options.timeout);
-	if (window.PhoneSync_timerSyncUploads_uploading) {
-		return;
-	}
+	}, 60000);
 	this.get('_syncUploads', function(obj) {
 		if (!obj || obj===undefined || obj.keys.length==0) {
 			return;
@@ -600,7 +599,6 @@ PhoneSync.prototype.syncUploads=function() {
 		if (/^_/.test(key)) {
 			obj.keys.shift();
 			that.save(obj, function() { // remove this item from the queue
-				window.PhoneSync_timerSyncUploads_uploading=false;
 				clearTimeout(window.PhoneSync_timerSyncUploads);
 				window.PhoneSync_timerSyncUploads=setTimeout(function() {
 					that.syncUploads();
@@ -609,11 +607,10 @@ PhoneSync.prototype.syncUploads=function() {
 			return;
 		}
 		that.get(key, function(ret) {
-			window.PhoneSync_timerSyncUploads_uploading=true;
 			if (ret===null) {
 				obj.keys.shift();
+				console.log('ret is null. removing');
 				that.save(obj, function() { // remove this item from the queue
-					window.PhoneSync_timerSyncUploads_uploading=false;
 					clearTimeout(window.PhoneSync_timerSyncUploads);
 					window.PhoneSync_timerSyncUploads=setTimeout(function() {
 						that.syncUploads();
@@ -626,7 +623,6 @@ PhoneSync.prototype.syncUploads=function() {
 				function(ret) { //  success
 					obj.keys.shift();
 					that.save(obj, function() { // remove this item from the queue
-						window.PhoneSync_timerSyncUploads_uploading=false;
 						clearTimeout(window.PhoneSync_timerSyncUploads);
 						window.PhoneSync_timerSyncUploads=setTimeout(function() {
 							that.syncUploads();
@@ -639,7 +635,6 @@ PhoneSync.prototype.syncUploads=function() {
 				function(ret) { // fail
 					console.log('PhoneSync: syncUploads() fail.');
 					console.log(JSON.stringify(ret));
-					window.PhoneSync_timerSyncUploads_uploading=false;
 					clearTimeout(window.PhoneSync_timerSyncUploads);
 					window.PhoneSync_timerSyncUploads=setTimeout(function() {
 						that.syncUploads();

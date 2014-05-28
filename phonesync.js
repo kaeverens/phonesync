@@ -239,10 +239,20 @@ PhoneSync.prototype.apiNext=function() {
 	this.networkInUse=true;
 	console.log('setting networkInUse to true');
 	this.options.onBeforeNetwork();
-	var call=this.apiCalls.shift();
+	var call=false;
+	for (var i=0;i<this.apiCalls.length;++i) {
+		if (this.apiCalls[i][4]=='syncUploads') {
+			console.log('UPLOAD FOUND. this gets priority');
+			var call=this.apiCalls[i];
+			this.apiCalls.splice(i, 1);
+			break;
+		}
+	}
+	if (!call) {
+		call=this.apiCalls.shift();
+	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3]
 		, action=call[4];
-	console.warn('CALLING SERVER', url, params);
 	$.post(url, params)
 		.done(function(ret) {
 			that.options.onNetwork();
@@ -265,7 +275,12 @@ PhoneSync.prototype.apiNext=function() {
 			}
 		})
 		.fail(function(e) {
-			that.apiCalls.push(call);
+			if (call[4]=='syncUploads') {
+				that.apiCalls.unshift(call);
+			}
+			else {
+				that.apiCalls.push(call);
+			}
 			fail();
 		})
 		.always(function(stuff) {

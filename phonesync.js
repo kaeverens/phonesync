@@ -33,7 +33,6 @@ function PhoneSync(params, callback) {
 	this.disableFS=false;
 	this.filePutQueue=[];
 	this.fileGetQueue=[];
-	console.log('initialising networkInUse as false');
 	this.networkInUse=false;
 	this.loggedIn=false;
 	this.tables={};
@@ -227,7 +226,6 @@ PhoneSync.prototype.apiNext=function() {
 		return;
 	}
 	if (this.networkInUse) {
-		console.log('network is in use. try again shortly');
 		window.PhoneSync_timerApiCall=setTimeout(
 			function() {
 				that.apiNext();
@@ -237,12 +235,10 @@ PhoneSync.prototype.apiNext=function() {
 		return;
 	}
 	this.networkInUse=true;
-	console.log('setting networkInUse to true');
 	this.options.onBeforeNetwork();
 	var call=false;
 	for (var i=0;i<this.apiCalls.length;++i) {
 		if (this.apiCalls[i][4]=='syncUploads') {
-			console.log('UPLOAD FOUND. this gets priority');
 			var call=this.apiCalls[i];
 			this.apiCalls.splice(i, 1);
 			break;
@@ -285,7 +281,6 @@ PhoneSync.prototype.apiNext=function() {
 		})
 		.always(function(stuff) {
 			that.networkInUse=false;
-			console.log('setting networkInUse to false');
 			clearTimeout(window.PhoneSync_timerApiCall);
 			window.PhoneSync_timerApiCall=setTimeout(
 				function() {

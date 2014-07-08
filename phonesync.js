@@ -153,6 +153,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		uid=credentials.user_id;
 	}
 	if (this.options.urls[action]===undefined) {
+		console.log('no url defined for the action: '+action);
 		return;
 	}
 	var url=this.options.urls[action]+'/_v='+_v+'/_t='+(new Date).toYMD();
@@ -201,12 +202,15 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			.replace(/[\u2018\u2019]/g, "'")
 			.replace(/[\u201C\u201D]/g, '"');
 		params._md5=this.md5(json);
+		console.log(params._md5);
+		console.log(json);
 	}
 	if (!fail) {
 		fail=function(ret) {
 			console.error(JSON.stringify(ret));
 		}
 	}
+	console.log('api request added to queue');
 	this.apiCalls.push([url, params, success, fail, action]);
 	this.apiNext();
 }
@@ -249,6 +253,7 @@ PhoneSync.prototype.apiNext=function() {
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3]
 		, action=call[4];
+	console.log(url, params);
 	$.post(url, params)
 		.done(function(ret) {
 			that.options.onNetwork();
@@ -258,6 +263,7 @@ PhoneSync.prototype.apiNext=function() {
 				return fail({'err':'error while sending request'});
 			}
 			if (ret.error) {
+				console.log('Error: '+ret.error);
 				fail(ret);
 			}
 			else {
@@ -481,7 +487,7 @@ PhoneSync.prototype.idDel=function(name, id) {
 PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var that=this;
 	if (this.disableFS) {
-		return callback();
+		return callback?callback():0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
@@ -914,15 +920,18 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 PhoneSync.prototype.syncDownloads=function() {
 	var that=this;
 	if (this.disableFS) {
+		console.log('fs disabled');
 		return;
 	}
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
 	if (!this.loggedIn) {
 		window.PhoneSync_timerSyncDownloads=setTimeout(function() {
 			that.syncDownloads();
-		}, that.options.timeout);
+		}, 15000);
+		console.log('not logged in. will sync downloads in 15s');
 		return;
 	}
+	console.log('about to sync downloads');
 	this.api(
 		'syncDownloads', {},
 		function(ret) {

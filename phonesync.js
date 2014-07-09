@@ -238,7 +238,13 @@ PhoneSync.prototype.apiNext=function() {
 		);
 		return;
 	}
-	this.networkInUse=true;
+	that.networkInUse=true;
+	clearTimeout(window.PhoneSync_timersClearNetwork);
+	window.PhoneSync_timersClearNetwork=setTimeout(
+		function() {
+			that.networkInUse=false;
+		}, 60000
+	);
 	this.options.onBeforeNetwork();
 	var call=false;
 	for (var i=0;i<this.apiCalls.length;++i) {
@@ -287,6 +293,7 @@ PhoneSync.prototype.apiNext=function() {
 		})
 		.always(function(stuff) {
 			that.networkInUse=false;
+			clearTimeout(window.PhoneSync_timersClearNetwork);
 			clearTimeout(window.PhoneSync_timerApiCall);
 			window.PhoneSync_timerApiCall=setTimeout(
 				function() {

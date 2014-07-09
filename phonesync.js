@@ -175,7 +175,10 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		for (var prop in obj) {
 			if (obj.hasOwnProperty(prop)) {
 				if (typeof obj[prop]=="object"){
-					recursiveClean(obj[prop]);
+					recursiveClean(obj[prop]); // clean the contents of this object
+					if (JSON.stringify(obj[prop])=='{}') { // if the object is now empty, remove it
+						delete obj[prop];
+					}
 				}
 				else {
 					if (obj[prop]===true) {
@@ -260,7 +263,6 @@ PhoneSync.prototype.apiNext=function() {
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3]
 		, action=call[4];
-	console.log(url, params);
 	$.post(url, params)
 		.done(function(ret) {
 			console.log(JSON.stringify(ret))

@@ -210,14 +210,13 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			console.error(JSON.stringify(ret));
 		}
 	}
-	console.log('api request added to queue');
 	this.apiCalls.push([url, params, success, fail, action]);
 	this.apiNext();
 }
 PhoneSync.prototype.apiNext=function() {
 	var that=this;
 	if (navigator.connection.type==Connection.NONE) {
-		console.error('no network');
+		console.log('no network. trying again in 5 seconds.');
 		return setTimeout(
 			function() {
 				that.apiNext();
@@ -240,9 +239,11 @@ PhoneSync.prototype.apiNext=function() {
 	}
 	that.networkInUse=true;
 	clearTimeout(window.PhoneSync_timersClearNetwork);
-	window.PhoneSync_timersClearNetwork=setTimeout(
+	window.PhoneSync_timersClearNetwork=setTimeout( // in case of event failure
 		function() {
+			console.log('server failed to respond within 60 seconds. trying again.');
 			that.networkInUse=false;
+			that.apiNext();
 		}, 60000
 	);
 	this.options.onBeforeNetwork();
@@ -262,6 +263,7 @@ PhoneSync.prototype.apiNext=function() {
 	console.log(url, params);
 	$.post(url, params)
 		.done(function(ret) {
+			console.log(JSON.stringify(ret))
 			that.options.onNetwork();
 			if (!ret) {
 				console.error('error while sending request');
@@ -283,6 +285,7 @@ PhoneSync.prototype.apiNext=function() {
 			}
 		})
 		.fail(function(e) {
+			console.log(JSON.stringify(e));
 			if (call[4]=='syncUploads') {
 				that.apiCalls.unshift(call);
 			}

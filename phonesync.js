@@ -45,7 +45,8 @@ function PhoneSync(params, callback) {
 	}
 	var that=this;
 	if (!Date.toYMD) {
-		function Date_toYMD() {
+		function Date_toYMD() //noinspection JSConstructorReturnsPrimitive
+        {
 			var year, month, day;
 			year = String(this.getFullYear());
 			month = String(this.getMonth() + 1);
@@ -133,7 +134,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 	window.PhoneSync_timerSyncUploads=setTimeout(function() {
 		that.syncUploads();
 	}, that.options.timeout);
-}
+};
 PhoneSync.prototype.api=function(action, params, success, fail) {
 	var that=this;
 	var _v=1;
@@ -216,7 +217,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 	}
 	this.apiCalls.push([url, params, success, fail, action]);
 	this.apiNext();
-}
+};
 PhoneSync.prototype.apiNext=function() {
 	var that=this;
 	if (navigator.connection.type==Connection.NONE) {
@@ -281,9 +282,9 @@ PhoneSync.prototype.apiNext=function() {
 			if (!ret) {
 				console.error('error while sending request');
 				console.log(url, params, ret);
-				return fail({'err':'error while sending request'});
+				fail({'err':'error while sending request'});
 			}
-			if (ret.error) {
+			else if (ret.error) {
 				console.log('Error: '+ret.error);
 				fail(ret);
 			}
@@ -318,7 +319,8 @@ PhoneSync.prototype.apiNext=function() {
 				1000
 			);
 		});
-}
+};
+//noinspection ReservedWordAsName
 PhoneSync.prototype.delete=function(key, callback, nosync) {
 	var that=this;
 	if (this.disableFS) {
@@ -344,7 +346,7 @@ PhoneSync.prototype.delete=function(key, callback, nosync) {
 		});
 	});
 	this.options.onDelete(key);
-}
+};
 PhoneSync.prototype.get=function(key, callback, download) {
 	var that=this;
 	function fail() {
@@ -412,7 +414,7 @@ PhoneSync.prototype.get=function(key, callback, download) {
 			}
 		}
 	);
-}
+};
 PhoneSync.prototype.getAll=function(key, callback) {
 	var that=this;
 	if (this.disableFS) {
@@ -442,7 +444,7 @@ PhoneSync.prototype.getAll=function(key, callback) {
 			}
 		});
 	}
-}
+};
 PhoneSync.prototype.getAllById=function(keys, callback) {
 	var that=this;
 	if (this.disableFS) {
@@ -459,7 +461,7 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 			}
 		});
 	}
-}
+};
 PhoneSync.prototype.idAdd=function(name, id, callback) {
 	var that=this;
 	id=''+id;
@@ -483,7 +485,7 @@ PhoneSync.prototype.idAdd=function(name, id, callback) {
 			}
 		}
 	});
-}
+};
 PhoneSync.prototype.idDel=function(name, id) {
 	var that=this;
 	id=''+id;
@@ -506,7 +508,7 @@ PhoneSync.prototype.idDel=function(name, id) {
 			'id':id // added to let recursive idAdd work
 		}, false, true);
 	});
-}
+};
 PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var that=this;
 	if (this.disableFS) {
@@ -573,7 +575,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 								that.filePutJSON()
 							}, that.options.timeout);
 						}
-					}
+					};
 					writer.write(json);
 				},
 				function() { // failed to create writer
@@ -596,7 +598,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 		}
 	}
 	// }
-}
+};
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	var that=this;
 	if (this.disableFS) {
@@ -619,7 +621,7 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 						else {
 							fail();
 						}
-					}
+					};
 					reader.readAsText(file);
 				},
 				fail
@@ -627,7 +629,7 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 		},
 		fail
 	);
-}
+};
 PhoneSync.prototype.md5=function(str) {
   //  discuss at: http://phpjs.org/functions/md5/
   // original by: Webtoolkit.info (http://www.webtoolkit.info/)
@@ -839,7 +841,7 @@ PhoneSync.prototype.md5=function(str) {
   var temp = wordToHex(a) + wordToHex(b) + wordToHex(c) + wordToHex(d);
 
   return temp.toLowerCase();
-}
+};
 PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
 	this.disableFS=true;
@@ -892,7 +894,7 @@ PhoneSync.prototype.nuke=function(callback) {
 		}
 	}
 	this.cache={};
-}
+};
 PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	var that=this;
 	if (oldId==newId) {
@@ -904,10 +906,10 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 		that.save(obj, callback, true);
 		that.delete(table+'-'+oldId);
 	});
-}
+};
 PhoneSync.prototype.sanitise=function(name) {
 	return name.replace(/[^a-zA-Z0-9\-]/g, '');
-}
+};
 PhoneSync.prototype.save=function(obj, callback, nosync) {
 	var that=this;
 	this.options.onBeforeSave(obj.key, obj);
@@ -939,7 +941,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 		}
 		this.filePutJSON(obj.key, obj, onSave);
 	}
-}
+};
 PhoneSync.prototype.syncDownloads=function() {
 	var that=this;
 	if (this.disableFS) {
@@ -1033,7 +1035,7 @@ PhoneSync.prototype.syncDownloads=function() {
 			}, that.options.syncDownloadsTimeout);
 		}
 	);
-}
+};
 PhoneSync.prototype.syncUploads=function() {
 	var that=this;
 	if (this.disableFS) {
@@ -1092,7 +1094,7 @@ PhoneSync.prototype.syncUploads=function() {
 					clearTimeout(window.PhoneSync_timerSyncUploads);
 					window.PhoneSync_timerSyncUploads=setTimeout(
 						function() {
-							that.syncUploads
+							that.syncUploads();
 						},
 						that.options.timeout
 					);
@@ -1100,7 +1102,7 @@ PhoneSync.prototype.syncUploads=function() {
 			);
 		});
 	});
-}
+};
 PhoneSync.prototype.utf8_encode=function(argString) {
   //  discuss at: http://phpjs.org/functions/utf8_encode/
   // original by: Webtoolkit.info (http://www.webtoolkit.info/)
@@ -1168,6 +1170,5 @@ PhoneSync.prototype.utf8_encode=function(argString) {
   if (end > start) {
     utftext += string.slice(start, stringl);
   }
-
   return utftext;
-}
+};

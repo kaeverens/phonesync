@@ -208,8 +208,6 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			.replace(/[\u2018\u2019]/g, "'")
 			.replace(/[\u201C\u201D]/g, '"');
 		params._md5=this.md5(json);
-		console.log(params._md5);
-		console.log(json);
 	}
 	if (!fail) {
 		fail=function(ret) {
@@ -254,21 +252,31 @@ PhoneSync.prototype.apiNext=function() {
 	);
 	this.options.onBeforeNetwork();
 	var call=false;
+	// { login/logout are priority
 	for (var i=0;i<this.apiCalls.length;++i) {
-		if (this.apiCalls[i][4]=='syncUploads') {
-			var call=this.apiCalls[i];
+		if (this.apiCalls[i][4]=='login' || this.apiCalls[i][4]=='logout') {
+			call=this.apiCalls[i];
 			this.apiCalls.splice(i, 1);
 			break;
 		}
 	}
-	if (!call) {
+	// }
+	if (!call) { // otherwise, uploads are priority
+		for (var i=0;i<this.apiCalls.length;++i) {
+			if (this.apiCalls[i][4]=='syncUploads') {
+				call=this.apiCalls[i];
+				this.apiCalls.splice(i, 1);
+				break;
+			}
+		}
+	}
+	if (!call) { // else, just pick the first in the list
 		call=this.apiCalls.shift();
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3]
 		, action=call[4];
 	$.post(url, params)
 		.done(function(ret) {
-			console.log(JSON.stringify(ret))
 			that.options.onNetwork();
 			if (!ret) {
 				console.error('error while sending request');

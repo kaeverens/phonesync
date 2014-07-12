@@ -120,6 +120,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 			return;
 		}
 		ret.keys.push(key);
+		console.log('syncUploads changed. now contains '+ret.keys.length+' items');
 		that.save(ret, false, true);
 	});
 	that.delaySyncUploads();
@@ -219,15 +220,16 @@ PhoneSync.prototype.apiNext=function() {
 		return;
 	}
 	if (that.networkInUse) {
-		return that.delayApiNext(that.options.failedApiCallTimeout);
+		return that.delayApiNext(1000);
 	}
+	console.log(JSON.stringify(this.apiCalls));
 	that.networkInUse=true;
 	clearTimeout(window.PhoneSync_timersClearNetwork);
 	window.PhoneSync_timersClearNetwork=window.setTimeout( // in case of event failure
 		function() {
 			console.log('server failed to respond within 60 seconds. trying again.');
 			that.networkInUse=false;
-			that.apiNext();
+			that.delayApiNext(1);
 		}, 60000
 	);
 	this.options.onBeforeNetwork();
@@ -276,39 +278,35 @@ PhoneSync.prototype.apiNext=function() {
 			}
 		})
 		.fail(function(e) {
-			console.log(JSON.stringify(e));
 			that.apiCalls.push(call);
 			fail();
 		})
 		.always(function() {
 			that.networkInUse=false;
 			window.clearTimeout(window.PhoneSync_timersClearNetwork);
-			that.delayApiNext();
+			that.delayApiNext(1);
 		});
 };
 PhoneSync.prototype.delayApiNext=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerApiCall);
-	window.PhoneSync_timerApiCall=window.setTimeout(
-		function() {
-			that.apiNext();
-		},
-		delay||1000
-	);
+	window.PhoneSync_timerApiCall=window.setTimeout(function() {
+		that.apiNext();
+	}, delay||1000);
 };
-PhoneSync.prototype.delayFilePutJSON=function() {
+PhoneSync.prototype.delayFilePutJSON=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerFilePutQueue);
 	window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
 		that.filePutJSON()
-	}, that.options.timeout);
+	}, delay||that.options.timeout);
 };
-PhoneSync.prototype.delaySyncUploads=function() {
+PhoneSync.prototype.delaySyncUploads=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerSyncUploads);
 	window.PhoneSync_timerSyncUploads=setTimeout(function() {
 		that.syncUploads();
-	}, that.options.timeout);
+	}, delay||that.options.timeout);
 };
 //noinspection ReservedWordAsName
 PhoneSync.prototype.delete=function(key, callback) {
@@ -493,39 +491,34 @@ PhoneSync.prototype.idDel=function(name, id) {
 };
 PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var that=this;
-	if (this.disableFS) {
+	if (that.disableFS) {
 		return callback?callback():0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
-		for (var i=1;i<this.filePutQueue.length;++i) {
-			var f=this.filePutQueue[i];
+		for (var i=1;i<that.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
+			var f=that.filePutQueue[i];
 			if (f[0]==name) {
-				this.filePutQueue[i]=this.filePutQueue[this.filePutQueue.length-1];
-				this.filePutQueue.pop();
+				that.filePutQueue.splice(i, 1);
 				break;
 			}
 		}
-		this.filePutQueue.push([name, obj, callback]);
-		return this.delayFilePutJSON();
+		that.filePutQueue.push([name, obj, callback]);
+		return that.delayFilePutJSON(1);
 	}
 	// }
-	// { check to see if there is already a file being written
-	if (this.filePutJSONLock) {
-		window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-		window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-			that.filePutJSON()
-		}, that.options.timeout);
-		return;
+	// { if a file is currently being written, then come back later
+	if (that.filePutJSONLock) {
+		return that.delayFilePutJSON(1);
 	}
 	// }
 	// { write a file
-	this.filePutJSONLock=true;
-	var o=this.filePutQueue.shift();
+	that.filePutJSONLock=true;
+	var o=that.filePutQueue.shift();
 	if (o) {
 		var name=o[0], obj=o[1], callback=o[2];
 		var json=JSON.stringify(obj);
-		this.fs.getFile(this.sanitise(name), {'create':true, 'exclusive':false},
+		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
 				entry.createWriter(function(writer) {
 					writer.onwriteend=function() {
@@ -548,10 +541,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 						}
 						that.filePutJSONLock=false;
 						if (that.filePutQueue.length) {
-							clearTimeout(window.PhoneSync_timerFilePutQueue);
-							window.PhoneSync_timerFilePutQueue=setTimeout(function() {
-								that.filePutJSON()
-							}, that.options.timeout);
+							that.delayFilePutJSON(1);
 						}
 					};
 					writer.write(json);
@@ -559,20 +549,14 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 				function(err) { // failed to create writer
 					console.log('ERROR', 'failed to create writer', err);
 					that.filePutQueue.unshift(o);
-					window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-					window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-						that.filePutJSON()
-					}, that.options.timeout);
+					that.delayFilePutJSON();
 				});
 			}
 		);
 	}
 	else {
-		if (this.filePutQueue.length) {
-			window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-			window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-				that.filePutJSON()
-			}, that.options.timeout);
+		if (that.filePutQueue.length) {
+			that.delayFilePutJSON(1);
 		}
 	}
 	// }
@@ -886,17 +870,17 @@ PhoneSync.prototype.sanitise=function(name) {
 };
 PhoneSync.prototype.save=function(obj, callback, nosync) {
 	var that=this;
-	this.options.onBeforeSave(obj.key, obj);
+	that.options.onBeforeSave(obj.key, obj);
 	function onSave() {
 		that.options.onSave(obj.key, obj);
 	}
-	if (this.disableFS) {
+	if (that.disableFS) {
 		return;
 	}
-	this.cache[obj.key]=obj;
+	that.cache[obj.key]=obj;
 	if (/-/.test(obj.key)) {
 		var id=obj.obj && obj.obj.id ? obj.obj.id : obj.id;
-		this.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
+		that.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
 			if (callback) {
 				callback();
 			}
@@ -911,9 +895,9 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 			callback();
 		}
 		if (!nosync) {
-			this.addToSyncUploads(obj.key);
+			that.addToSyncUploads(obj.key);
 		}
-		this.filePutJSON(obj.key, obj, onSave);
+		that.filePutJSON(obj.key, obj, onSave);
 	}
 };
 PhoneSync.prototype.syncDownloads=function() {
@@ -1020,31 +1004,28 @@ PhoneSync.prototype.syncUploads=function() {
 	if (this.disableFS) {
 		return;
 	}
-	this.delaySyncUploads();
 	this.get('_syncUploads', function(obj) {
-		if (!obj || obj===undefined || obj.keys.length==0) {
-			return;
+		if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
+			return that.delaySyncUploads(60000);
 		}
 		var key=obj.keys[0];
-		if (/^_/.test(key)) {
+		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
-			that.save(obj, function() { // remove this item from the queue
+			return that.save(obj, function() {
 				that.delaySyncUploads();
 			}, true);
-			return;
 		}
 		that.get(key, function(ret) {
-			if (ret===null) {
+			if (ret===null) { // item does not exist. remove from queue
 				obj.keys.shift();
-				console.log('ret is null. removing');
-				that.save(obj, function() { // remove this item from the queue
+				return that.save(obj, function() {
 					that.delaySyncUploads();
 				}, true);
-				return;
 			}
 			that.api(
 				'syncUploads', ret,
 				function(ret) { //  success
+					console.log('object successfully uploaded');
 					obj.keys.shift();
 					that.save(obj, function() { // remove this item from the queue
 						that.delaySyncUploads();

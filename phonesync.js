@@ -326,7 +326,7 @@ PhoneSync.prototype.delete=function(key, callback) {
 	if (callback) {
 		callback();
 	}
-	if ('none'!==that.options.dbType) {
+	if ('none'===that.options.dbType) {
 		that.get('_files', function(ret) {
 			if (ret===null) {
 				return;
@@ -844,48 +844,53 @@ PhoneSync.prototype.md5=function(str) {
 //noinspection JSUnusedGlobalSymbols
 PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
-	this.disableFS=true;
-	try {
-		this.fs.removeRecursively(function() {
-			window.requestFileSystem(
-				LocalFileSystem.PERSISTENT, 0,
-				function(filesystem) {
-					var entry=filesystem.root;
-					function createRoot() {
-						entry.getDirectory(
-							that.options.dbName,
-							{'create':true, 'exclusive':false},
-							function(root) {
-								that.fs=root;
-								that.disableFS=false;
-								clearTimeout(window.PhoneSync_timerSyncDownloads);
-								setTimeout(function() {
-									that.syncDownloads();
-								}, that.options.timeout);
-								that.delaySyncUploads();
-								that.options.ready(that);
-								for (var i in that.tables) {
-									that.tables[i].lastUpdate='0000-00-00 00:00:00';
+	if ('none'!==that.options.dbType) {
+		this.disableFS=true;
+		try {
+			this.fs.removeRecursively(function() {
+				window.requestFileSystem(
+					LocalFileSystem.PERSISTENT, 0,
+					function(filesystem) {
+						var entry=filesystem.root;
+						function createRoot() {
+							entry.getDirectory(
+								that.options.dbName,
+								{'create':true, 'exclusive':false},
+								function(root) {
+									that.fs=root;
+									that.disableFS=false;
+									clearTimeout(window.PhoneSync_timerSyncDownloads);
+									setTimeout(function() {
+										that.syncDownloads();
+									}, that.options.timeout);
+									that.delaySyncUploads();
+									that.options.ready(that);
+									for (var i in that.tables) {
+										that.tables[i].lastUpdate='0000-00-00 00:00:00';
+									}
+									that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
+									callback();
+								},
+								function(e) {
+									console.log(e);
+									setTimeout(createRoot, that.options.timeout);
 								}
-								that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
-								callback();
-							},
-							function(e) {
-								console.log(e);
-								setTimeout(createRoot, that.options.timeout);
-							}
-						);
+							);
+						}
+						createRoot();
+					},
+					function(e) {
+						console.log(e);
 					}
-					createRoot();
-				},
-				function(e) {
-					console.log(e);
-				}
-			);
-		});
+				);
+			});
+		}
+		catch (e) {
+			console.log(e);
+		}
 	}
-	catch (e) {
-		console.log(e);
+	else {
+		callback();
 	}
 	this.tablesLastUpdateClear();
 	this.cache={};

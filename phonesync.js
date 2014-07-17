@@ -35,6 +35,7 @@ function PhoneSync(params) {
 	};
 	$.extend(this.options, params);
 	this.fs=false;
+	this.allowDownloads=true; // don't allow downloads to happen while uploads are pending
 	this.disableFS=false;
 	this.filePutQueue=[];
 	this.fileGetQueue=[];
@@ -67,10 +68,7 @@ function PhoneSync(params) {
 					{'create':true, 'exclusive':false},
 					function(root) {
 						that.fs=root;
-						window.clearTimeout(window.PhoneSync_timerSyncDownloads);
-						window.setTimeout(function() {
-							that.syncDownloads();
-						}, that.options.timeout);
+						that.delaySyncDownloads();
 						that.delaySyncUploads();
 						that.get('_tables', function(ret) {
 							if (null === ret) {
@@ -104,10 +102,7 @@ function PhoneSync(params) {
 		}, 1);
 	}
 	$(document).bind('online', function() {
-		clearTimeout(window.PhoneSync_timerSyncDownloads);
-		setTimeout(function() {
-			that.syncDownloads();
-		}, that.options.timeout);
+		that.delaySyncDownloads();
 		that.delaySyncUploads();
 	});
 }
@@ -124,7 +119,6 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 			return;
 		}
 		ret.keys.push(key);
-		console.log('syncUploads changed. now contains '+ret.keys.length+' items');
 		that.save(ret, false, true);
 	});
 	that.delaySyncUploads();
@@ -226,7 +220,6 @@ PhoneSync.prototype.apiNext=function() {
 	if (that.networkInUse) {
 		return that.delayApiNext(1000);
 	}
-	console.log(JSON.stringify(this.apiCalls));
 	that.networkInUse=true;
 	clearTimeout(window.PhoneSync_timersClearNetwork);
 	window.PhoneSync_timersClearNetwork=window.setTimeout( // in case of event failure
@@ -236,13 +229,13 @@ PhoneSync.prototype.apiNext=function() {
 			that.delayApiNext(1);
 		}, 60000
 	);
-	this.options.onBeforeNetwork();
+	that.options.onBeforeNetwork();
 	var call=false;
 	// { login/logout are priority
-	for (var i=0;i<this.apiCalls.length;++i) {
-		if (this.apiCalls[i][4]==='login' || this.apiCalls[i][4]==='logout') {
-			call=this.apiCalls[i];
-			this.apiCalls.splice(i, 1);
+	for (var i=0;i<that.apiCalls.length;++i) {
+		if (that.apiCalls[i][4]==='login' || that.apiCalls[i][4]==='logout') {
+			call=that.apiCalls[i];
+			that.apiCalls.splice(i, 1);
 			//noinspection BreakStatementJS
 		 break;
 		}
@@ -270,7 +263,7 @@ PhoneSync.prototype.apiNext=function() {
 				fail({'err':'error while sending request'});
 			}
 			else if (ret.error) {
-				console.log('ERROR', ret.error);
+				console.log('ERROR', ret.error, url, params, ret);
 				fail(ret);
 			}
 			else {
@@ -282,8 +275,9 @@ PhoneSync.prototype.apiNext=function() {
 				}
 			}
 		})
-		.fail(function() {
+		.fail(function(ret) {
 			that.apiCalls.push(call);
+			console.log('upload error', url, params, ret);
 			fail();
 		})
 		.always(function() {
@@ -292,6 +286,14 @@ PhoneSync.prototype.apiNext=function() {
 			that.delayApiNext(1);
 		});
 };
+PhoneSync.prototype.delayAllowDownloads=function() {
+	var that=this;
+	that.allowDownloads=false;
+	window.clearTimeout(window.PhoneSync_timerAllowDownloads);
+	window.PhoneSync_timerAllowDownloads=window.setTimeout(function() {
+		that.allowDownloads=true;
+	}, that.options.timeout+1000);
+}
 PhoneSync.prototype.delayApiNext=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerApiCall);
@@ -306,6 +308,14 @@ PhoneSync.prototype.delayFilePutJSON=function(delay) {
 		that.filePutJSON();
 	}, delay||that.options.timeout);
 };
+PhoneSync.prototype.delaySyncDownloads=function(delay) {
+	var that=this;
+	delay=delay||that.options.timeout;
+	clearTimeout(window.PhoneSync_timerSyncDownloads);
+	setTimeout(function() {
+		that.syncDownloads();
+	}, delay);
+}
 PhoneSync.prototype.delaySyncUploads=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerSyncUploads);
@@ -859,10 +869,7 @@ PhoneSync.prototype.nuke=function(callback) {
 								function(root) {
 									that.fs=root;
 									that.disableFS=false;
-									clearTimeout(window.PhoneSync_timerSyncDownloads);
-									setTimeout(function() {
-										that.syncDownloads();
-									}, that.options.timeout);
+									that.delaySyncDownloads();
 									that.delaySyncUploads();
 									that.options.ready(that);
 									for (var i in that.tables) {
@@ -928,6 +935,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 				callback();
 			}
 			if (!(nosync || /^_/.test(obj.key))) {
+				console.log('adding to syncuploads', obj.key);
 				that.addToSyncUploads(obj.key);
 			}
 			that.filePutJSON(obj.key, obj, onSave);
@@ -944,23 +952,23 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 	}
 };
 PhoneSync.prototype.syncDownloads=function() {
-	if (this.apiAlreadyInQueue('syncDownloads')) {
+	var that=this;
+	if (!that.allowDownloads) {
+		return that.delaySyncDownloads();
+	}
+	if (that.apiAlreadyInQueue('syncDownloads')) {
 		return;
 	}
-	var that=this;
-	if (this.disableFS) {
+	if (that.disableFS) {
 		console.log('fs disabled');
 		return;
 	}
-	clearTimeout(window.PhoneSync_timerSyncDownloads);
-	if (!this.loggedIn) {
-		window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-			that.syncDownloads();
-		}, 15000);
+	if (!that.loggedIn) {
 		console.log('not logged in. will sync downloads in 15s');
-		return;
+		return that.delaySyncDownloads(15000);
 	}
-	this.api(
+	clearTimeout(window.PhoneSync_timerSyncDownloads);
+	that.api(
 		'syncDownloads', {},
 		function(ret) {
 			var deletes=[], changes=0;
@@ -1018,24 +1026,11 @@ PhoneSync.prototype.syncDownloads=function() {
 				that.delete(deletes[i].key);
 				changes++;
 			}
-			clearTimeout(window.PhoneSync_timerSyncDownloads);
-			if (changes) {
-				window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-					that.syncDownloads();
-				}, that.options.timeout);
-			}
-			else {
-				window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-					that.syncDownloads();
-				}, that.options.syncDownloadsTimeout);
-			}
+			that.delaySyncDownloads(changes?0:that.options.syncDownloadsTimeout)
 		},
 		function(err) {
 			console.log('failed', err);
-			clearTimeout(window.PhoneSync_timerSyncDownloads);
-			window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-				that.syncDownloads();
-			}, that.options.syncDownloadsTimeout);
+			that.delaySyncDownloads(that.options.syncDownloadsTimeout);
 		}
 	);
 };
@@ -1052,6 +1047,7 @@ PhoneSync.prototype.syncUploads=function() {
 			return that.delaySyncUploads(60000);
 		}
 		var key=obj.keys[0];
+		that.delayAllowDownloads();
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
 			return that.save(obj, function() {
@@ -1062,16 +1058,15 @@ PhoneSync.prototype.syncUploads=function() {
 			if (ret===null) { // item does not exist. remove from queue
 				obj.keys.shift();
 				return that.save(obj, function() {
-					that.delaySyncUploads();
+					that.delaySyncUploads(1);
 				}, true);
 			}
 			that.api(
 				'syncUploads', ret,
 				function(ret) { //  success
-					console.log('object successfully uploaded');
 					obj.keys.shift();
 					that.save(obj, function() { // remove this item from the queue
-						that.delaySyncUploads();
+						that.delaySyncUploads(1);
 						if (ret) {
 							that.options.onUpload(key, ret);
 						}

@@ -287,8 +287,15 @@ PhoneSync.prototype.delayAllowDownloads=function() {
 	that.allowDownloads=false;
 	window.clearTimeout(window.PhoneSync_timerAllowDownloads);
 	window.PhoneSync_timerAllowDownloads=window.setTimeout(function() {
-		that.allowDownloads=true;
-	}, that.options.timeout+1000);
+		that.get('_syncUploads', function(obj) {
+			if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
+				that.allowDownloads=true;
+			}
+			else {
+				that.delayAllowDownloads();
+			}
+		});
+	}, that.options.timeout);
 }
 PhoneSync.prototype.delayApiNext=function(delay) {
 	var that=this;

@@ -119,6 +119,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 			return;
 		}
 		ret.keys.push(key);
+		console.log(ret.keys);
 		that.save(ret, false, true);
 	});
 	that.delaySyncUploads();
@@ -141,20 +142,15 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		return;
 	}
 	var url=this.options.urls[action]+'/_v='+_v+'/_t='+(new Date()).toYMD();
-	var lastUpdates={};
-	$.each(this.tables, function(k, v) {
-		lastUpdates[k]=v.lastUpdate;
-	});
 	if ('syncDownloads' === action) {
+		var lastUpdates={};
+		$.each(this.tables, function(k, v) {
+			lastUpdates[k]='0000-00-00 00:00:00' === v.lastUpdate ? 0 : v.lastUpdate;
+		});
 		params._lastUpdates=lastUpdates;
 	}
 	params._uuid=(window.device&&device.uuid)?device.uuid:'no-uid|'+uid;
 	this.uuid=params._uuid;
-	$.each(params, function(k, v) {
-		if (true === v) {
-			params[k]=1;
-		}
-	});
 	function recursiveClean(obj) {
 		for (var prop in obj) {
 			if (obj.hasOwnProperty(prop)) {
@@ -1047,16 +1043,20 @@ PhoneSync.prototype.syncUploads=function() {
 			return that.delaySyncUploads(60000);
 		}
 		var key=obj.keys[0];
+console.log(obj.keys.length, 'keys ready for uploading', obj.keys);
 		that.delayAllowDownloads();
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
+console.log(obj.keys);
 			return that.save(obj, function() {
-				that.delaySyncUploads();
+				that.delaySyncUploads(1);
 			}, true);
 		}
 		that.get(key, function(ret) {
 			if (ret===null) { // item does not exist. remove from queue
 				obj.keys.shift();
+console.log('item does not exist. removing from queue', key);
+console.log(obj.keys);
 				return that.save(obj, function() {
 					that.delaySyncUploads(1);
 				}, true);
@@ -1065,6 +1065,8 @@ PhoneSync.prototype.syncUploads=function() {
 				'syncUploads', ret,
 				function(ret) { //  success
 					obj.keys.shift();
+console.log('successfully uploaded');
+console.log(obj.keys);
 					that.save(obj, function() { // remove this item from the queue
 						that.delaySyncUploads(1);
 						if (ret) {

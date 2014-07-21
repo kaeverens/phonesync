@@ -220,10 +220,10 @@ PhoneSync.prototype.apiNext=function() {
 	clearTimeout(window.PhoneSync_timersClearNetwork);
 	window.PhoneSync_timersClearNetwork=window.setTimeout( // in case of event failure
 		function() {
-			console.log('server failed to respond within 60 seconds. trying again.');
+			console.log('server failed to respond within 240 seconds. trying again.');
 			that.networkInUse=false;
 			that.delayApiNext(1);
-		}, 60000
+		}, 240000
 	);
 	that.options.onBeforeNetwork();
 	var call=false;
@@ -273,6 +273,7 @@ PhoneSync.prototype.apiNext=function() {
 		})
 		.fail(function(ret) {
 			that.apiCalls.push(call);
+			console.log(url);
 			console.log('upload error', url, params, ret);
 			fail();
 		})
@@ -1050,7 +1051,7 @@ PhoneSync.prototype.syncUploads=function() {
 			return that.delaySyncUploads(60000);
 		}
 		var key=obj.keys[0];
-console.log(obj.keys.length, 'keys ready for uploading', obj.keys);
+console.log(obj.keys.length+' keys ready for uploading', obj.keys);
 		that.delayAllowDownloads();
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
@@ -1073,7 +1074,6 @@ console.log(obj.keys);
 				function(ret) { //  success
 					obj.keys.shift();
 console.log('successfully uploaded');
-console.log(obj.keys);
 					that.save(obj, function() { // remove this item from the queue
 						that.delaySyncUploads(1);
 						if (ret) {

@@ -35,6 +35,7 @@ function PhoneSync(params) {
 	};
 	$.extend(this.options, params);
 	this.fs=false;
+	this.numberOfUploads=0;
 	this.allowDownloads=true; // don't allow downloads to happen while uploads are pending
 	this.disableFS=false;
 	this.filePutQueue=[];
@@ -119,7 +120,6 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 			return;
 		}
 		ret.keys.push(key);
-		console.log(ret.keys);
 		that.save(ret, false, true);
 	});
 	that.delaySyncUploads();
@@ -191,7 +191,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 	}
 	if (!fail) {
 		fail=function(ret) {
-			console.log('ERROR', JSON.stringify(ret));
+			console.log('ERROR: '+JSON.stringify(ret));
 		};
 	}
 	this.apiCalls.push([url, params, success, fail, action]);
@@ -239,7 +239,7 @@ PhoneSync.prototype.apiNext=function() {
 	// }
 	if (!call) { // otherwise, uploads are priority
 		for (i=0;i<this.apiCalls.length;++i) {
-			if (this.apiCalls[i][4]==='syncUploads') {
+			if ('syncUploads' === this.apiCalls[i][4]) {
 				call=this.apiCalls[i];
 				this.apiCalls.splice(i, 1);
 				//noinspection BreakStatementJS
@@ -259,7 +259,7 @@ PhoneSync.prototype.apiNext=function() {
 				fail({'err':'error while sending request'});
 			}
 			else if (ret.error) {
-				console.log('ERROR', ret.error, url, params, ret);
+				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
 				fail(ret);
 			}
 			else {
@@ -360,7 +360,7 @@ PhoneSync.prototype.delete=function(key, callback) {
 				}
 				if (ret.files[key]) {
 					delete ret.files[key];
-					that.save(ret);
+					that.save(ret, null, true);
 				}
 			});
 		});
@@ -368,6 +368,66 @@ PhoneSync.prototype.delete=function(key, callback) {
 	this.options.onDelete(key);
 };
 PhoneSync.prototype.get=function(key, callback, download) {
+	function doTheGet(rekeys) {
+		if (null !== rekeys && rekeys.changes[key]) {
+			key=rekeys.changes[key];
+		}
+		if (that.cache._files) {
+			if (that.cache._files.files[key]===undefined && !download) {
+				if ('_rekeys' === key) {
+					var rekeys={
+						'key':'_rekeys',
+						'changes':{}
+					};
+					lch.save(rekeys);
+					return rekeys;
+				}
+				return fail();
+			}
+		}
+		for (var i=0;i<that.fileGetQueue.length;++i) {
+			if (that.fileGetQueue[i]===key) {
+				//noinspection JSHint
+				setTimeout(function() {
+					that.get(key, callback, download);
+				}, that.options.timeout);
+				return;
+			}
+		}
+		that.fileGetQueue.push(key);
+		that.fileGetJSON(key,
+			function(obj) {
+				var arr=[];
+				for (var i=0;i<that.fileGetQueue.length;++i) {
+					if (that.fileGetQueue[i]!==key) {
+						arr.push(that.fileGetQueue[i]);
+					}
+				}
+				that.fileGetQueue=arr;
+				that.cache[key]=obj;
+				callback($.extend({}, obj));
+			},
+			function() {
+				if (download) {
+					that.api('syncDownloadOne', {
+						'key':key
+					}, function(ret) {
+						var obj={
+							'key':key,
+							'obj':ret
+						};
+						that.save(obj);
+						callback(obj);
+					}, fail, function() {
+						console.log('offline - cannot download missing resource: '+key);
+					});
+				}
+				else {
+					fail();
+				}
+			}
+		);
+	}
 	function fail() {
 		var arr=[];
 		for (var i=0;i<that.fileGetQueue.length;++i) {
@@ -387,53 +447,12 @@ PhoneSync.prototype.get=function(key, callback, download) {
 			return callback($.extend({}, this.cache[key]));
 		}
 	}
-	if (this.cache._files) {
-		if (this.cache._files.files[key]===undefined && !download) {
-			return fail();
-		}
+	if ('_rekeys' === key) {
+		doTheGet(null);
 	}
-	for (var i=0;i<this.fileGetQueue.length;++i) {
-		if (this.fileGetQueue[i]===key) {
-			//noinspection JSHint
-			setTimeout(function() {
-				that.get(key, callback, download);
-			}, that.options.timeout);
-			return;
-		}
+	else {
+		that.get('_rekeys', doTheGet);
 	}
-	this.fileGetQueue.push(key);
-	this.fileGetJSON(key,
-		function(obj) {
-			var arr=[];
-			for (var i=0;i<that.fileGetQueue.length;++i) {
-				if (that.fileGetQueue[i]!==key) {
-					arr.push(that.fileGetQueue[i]);
-				}
-			}
-			that.fileGetQueue=arr;
-			that.cache[key]=obj;
-			callback($.extend({}, obj));
-		},
-		function() {
-			if (download) {
-				that.api('syncDownloadOne', {
-					'key':key
-				}, function(ret) {
-					var obj={
-						'key':key,
-						'obj':ret
-					};
-					that.save(obj);
-					callback(obj);
-				}, fail, function() {
-					console.log('offline - cannot download missing resource: '+key);
-				});
-			}
-			else {
-				fail();
-			}
-		}
-	);
 };
 PhoneSync.prototype.getAll=function(key, callback) {
 	var that=this;
@@ -912,6 +931,16 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	if (oldId==newId) {
 		return;
 	}
+	this.get('_rekeys', function(obj) {
+		if (null === obj) {
+			obj={
+				'key':'_rekeys',
+				'changes':{}
+			};
+		}
+		obj.changes[table+'-'+oldId]=table+'-'+newId;
+		lch.save(obj, null, true);
+	});
 	this.get(table+'-'+oldId, function(obj) {
 		obj.key=table+'-'+newId;
 		obj.obj.id=newId;
@@ -939,7 +968,6 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 				callback();
 			}
 			if (!(nosync || /^_/.test(obj.key))) {
-				console.log('adding to syncuploads', obj.key);
 				that.addToSyncUploads(obj.key);
 			}
 			that.filePutJSON(obj.key, obj, onSave);
@@ -1043,38 +1071,48 @@ PhoneSync.prototype.syncUploads=function() {
 		return;
 	}
 	var that=this;
-	if (this.disableFS) {
+	if (that.alreadyDoingSyncUpload) {
+		return that.delaySyncUploads(1);
+	}
+	var numberOfUploads=++that.numberOfUploads;
+	if (that.disableFS) {
 		return;
 	}
-	this.get('_syncUploads', function(obj) {
+	that.get('_syncUploads', function(obj) {
 		if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
-			return that.delaySyncUploads(60000);
+			return; //  that.delaySyncUploads(60000);
 		}
 		var key=obj.keys[0];
-console.log(obj.keys.length+' keys ready for uploading', obj.keys);
 		that.delayAllowDownloads();
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
-console.log(obj.keys);
 			return that.save(obj, function() {
 				that.delaySyncUploads(1);
 			}, true);
 		}
+		if (that.alreadyDoingSyncUpload) {
+			return that.delaySyncUploads(1);
+		}
+		that.alreadyDoingSyncUpload=1;
 		that.get(key, function(ret) {
 			if (ret===null) { // item does not exist. remove from queue
 				obj.keys.shift();
-console.log('item does not exist. removing from queue', key);
-console.log(obj.keys);
 				return that.save(obj, function() {
+					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads(1);
 				}, true);
 			}
 			that.api(
 				'syncUploads', ret,
 				function(ret) { //  success
+					if (obj.keys[0]!==key) {
+						console.warn('DUPLICATE UPLOADED?? '+key);
+						that.delaySyncUploads(1);
+						return;
+					}
 					obj.keys.shift();
-console.log('successfully uploaded');
-					that.save(obj, function() { // remove this item from the queue
+					that.save(obj, function() { // remove that item from the queue
+						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
 						if (ret) {
 							that.options.onUpload(key, ret);
@@ -1082,7 +1120,8 @@ console.log('successfully uploaded');
 					}, true);
 				},
 				function(err) { // fail
-					console.log('PhoneSync: syncUploads() fail.', err);
+					console.log(numberOfUploads+': '+'PhoneSync: syncUploads() fail.', err);
+					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads();
 				}
 			);

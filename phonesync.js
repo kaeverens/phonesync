@@ -160,13 +160,14 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 						delete obj[prop];
 					}
 				}
-				else {
-					if (obj[prop]===true) {
-						obj[prop]=1;
-					}
-					if (obj[prop]===false) {
-						obj[prop]=0;
-					}
+				else if (true === obj[prop]) {
+					obj[prop]=1;
+				}
+				else if (false === obj[prop]) {
+					obj[prop]=0;
+				}
+				else if (null === obj[prop]) {
+					delete obj[prop];
 				}
 			}
 		}

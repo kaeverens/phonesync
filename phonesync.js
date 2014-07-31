@@ -125,7 +125,6 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 	that.delaySyncUploads();
 };
 PhoneSync.prototype.api=function(action, params, success, fail) {
-	var _v=1;
 	var uid=0;
 	if (window.credentials) {
 		params._userdata={
@@ -141,7 +140,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		console.log('no url defined for the action', action);
 		return;
 	}
-	var url=this.options.urls[action]+'/_v='+_v+'/_t='+(new Date()).toYMD();
+	var url=this.options.urls[action];
 	if ('syncDownloads' === action) {
 		var lastUpdates={};
 		$.each(this.tables, function(k, v) {
@@ -380,7 +379,7 @@ PhoneSync.prototype.get=function(key, callback, download) {
 						'key':'_rekeys',
 						'changes':{}
 					};
-					lch.save(rekeys);
+					lch.save(rekeys, null, true);
 					return rekeys;
 				}
 				return fail();
@@ -879,9 +878,9 @@ PhoneSync.prototype.md5=function(str) {
 PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
 	if ('none'!==that.options.dbType) {
-		this.disableFS=true;
+		that.disableFS=true;
 		try {
-			this.fs.removeRecursively(function() {
+			that.fs.removeRecursively(function() {
 				window.requestFileSystem(
 					LocalFileSystem.PERSISTENT, 0,
 					function(filesystem) {
@@ -923,8 +922,9 @@ PhoneSync.prototype.nuke=function(callback) {
 	else {
 		callback();
 	}
-	this.tablesLastUpdateClear();
-	this.cache={};
+	that.tablesLastUpdateClear();
+	that.alreadyDoingSyncUpload=0;
+	that.cache={};
 };
 //noinspection JSUnusedGlobalSymbols
 PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
@@ -1108,6 +1108,7 @@ PhoneSync.prototype.syncUploads=function() {
 				function(ret) { //  success
 					if (obj.keys[0]!==key) {
 						console.warn('DUPLICATE UPLOADED?? '+key);
+						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
 						return;
 					}

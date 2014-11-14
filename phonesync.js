@@ -138,6 +138,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 	}
 	if (this.options.urls[action]===undefined) {
 		console.log('no url defined for the action', action);
+		fail();
 		return;
 	}
 	var url=this.options.urls[action];
@@ -183,10 +184,11 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			return v;
 		});
 		json=json
-			.replace(/,"[^"]*":\[\]/, '')
-			.replace(/"[^"]*":\[\],/, '')
+			.replace(/,\\*"[^"]*":\[\]/, '')
+			.replace(/\\*"[^"]*":\[\],/, '')
 			.replace(/[\u2018\u2019]/g, "'")
 			.replace(/[\u201C\u201D]/g, '"');
+		params=JSON.parse(json);
 		params._md5=this.md5(json);
 	}
 	if (!fail) {
@@ -962,8 +964,8 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 		return;
 	}
 	that.cache[obj.key]=obj;
-	if (/-/.test(obj.key)) {
-		var id=obj.obj && obj.obj.id ? obj.obj.id : obj.id;
+	var id=obj.obj && obj.obj.id ? obj.obj.id : obj.id;
+	if (/-/.test(obj.key) && id) {
 		that.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
 			if (callback) {
 				callback();
@@ -1068,10 +1070,14 @@ PhoneSync.prototype.syncDownloads=function() {
 	);
 };
 PhoneSync.prototype.syncUploads=function() {
-	if (this.apiAlreadyInQueue('syncUploads')) {
+	var that=this;
+	if (!that.loggedIn) {
+		console.log('not logged in. will sync uploads in 15s');
+		return that.delaySyncUploads(15000);
+	}
+	if (that.apiAlreadyInQueue('syncUploads')) {
 		return;
 	}
-	var that=this;
 	if (that.alreadyDoingSyncUpload) {
 		return that.delaySyncUploads(1);
 	}
@@ -1097,8 +1103,10 @@ PhoneSync.prototype.syncUploads=function() {
 		that.alreadyDoingSyncUpload=1;
 		that.get(key, function(ret) {
 			if (ret===null) { // item does not exist. remove from queue
+				console.log('object did not exist. removing.');
 				obj.keys.shift();
 				return that.save(obj, function() {
+					console.log('removed.');
 					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads(1);
 				}, true);
@@ -1122,7 +1130,7 @@ PhoneSync.prototype.syncUploads=function() {
 					}, true);
 				},
 				function(err) { // fail
-					console.log(numberOfUploads+': '+'PhoneSync: syncUploads() fail.', err);
+					console.log('upload failed');
 					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads();
 				}

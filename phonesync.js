@@ -375,13 +375,14 @@ PhoneSync.prototype.get=function(key, callback, download) {
 			key=rekeys.changes[key];
 		}
 		if (that.cache._files) {
-			if (that.cache._files.files[key]===undefined && !download) {
+			if (that.cache._files.files[key]===undefined && (undefined===download || !download)) {
 				if ('_rekeys' === key) {
 					var rekeys={
 						'key':'_rekeys',
 						'changes':{}
 					};
 					lch.save(rekeys, null, true);
+					callback(rekeys);
 					return rekeys;
 				}
 				return fail();
@@ -999,7 +1000,6 @@ PhoneSync.prototype.syncDownloads=function() {
 		return;
 	}
 	if (!that.loggedIn) {
-		console.log('not logged in. will sync downloads in 15s');
 		return that.delaySyncDownloads(15000);
 	}
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
@@ -1072,7 +1072,6 @@ PhoneSync.prototype.syncDownloads=function() {
 PhoneSync.prototype.syncUploads=function() {
 	var that=this;
 	if (!that.loggedIn) {
-		console.log('not logged in. will sync uploads in 15s');
 		return that.delaySyncUploads(15000);
 	}
 	if (that.apiAlreadyInQueue('syncUploads')) {

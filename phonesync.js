@@ -9,6 +9,7 @@ function PhoneSync(params) {
 		'dbType':/http/.test(document.location.toString())?'none':'file',
 		'md5':false, // send MD5 checks
 		'timeout':1000, // milliseconds
+		'version':0, // version parameter to send to server as _v
 		'updatesUrl':'', // URL of the API
 		'failedApiCallTimeout':10000,
 		'ready':function(obj) { // called when the database is initialised
@@ -148,6 +149,9 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			lastUpdates[k]='0000-00-00 00:00:00' === v.lastUpdate ? 0 : v.lastUpdate;
 		});
 		params._lastUpdates=lastUpdates;
+	}
+	if (this.options.version) {
+		params._v=this.options.version;
 	}
 	params._uuid=(window.device&&device.uuid)?device.uuid:'no-uid|'+uid;
 	this.uuid=params._uuid;
@@ -884,6 +888,7 @@ PhoneSync.prototype.nuke=function(callback) {
 		that.disableFS=true;
 		try {
 			that.fs.removeRecursively(function() {
+				console.log('successfully nuked. rebuilding now.');
 				window.requestFileSystem(
 					LocalFileSystem.PERSISTENT, 0,
 					function(filesystem) {
@@ -989,7 +994,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 };
 PhoneSync.prototype.syncDownloads=function() {
 	var that=this;
-	if (!that.allowDownloads) {
+	if (!that.allowDownloads || !window.credentials || that.inSyncDownloads) {
 		return that.delaySyncDownloads();
 	}
 	if (that.apiAlreadyInQueue('syncDownloads')) {
@@ -1002,18 +1007,37 @@ PhoneSync.prototype.syncDownloads=function() {
 	if (!that.loggedIn) {
 		return that.delaySyncDownloads(15000);
 	}
+	that.inSyncDownloads=true;
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
 	that.api(
 		'syncDownloads', {},
 		function(ret) {
-			var deletes=[], changes=0;
+			// { relink headers and values if headers and values are separate
 			$.each(ret, function(k, v) {
+				var headers=v[0], vals=[];
+				if (!$.isArray(headers)) {
+					return;
+				}
+				for (var i=0;i<v[1].length;++i) {
+					var obj={};
+					for (var j=0;j<headers.length;++j) {
+						obj[headers[j]]=v[1][i][j];
+					}
+					vals.push(obj);
+				}
+				ret[k]=vals;
+			});
+			// }
+			var changes=0;
+			// handle deletes first
+			$.each(ret, function(k, v) {
+				if (k!=='_deletes') {
+					return;
+				}
 				if (!$.isArray(v)) {
 					return;
 				}
-				if (k=='_deletes') {
-					deletes=v;
-				}
+				var deletes=v;
 				var tableUpdatesChanged=false;
 				for (var i=0;i<v.length;++i) {
 					var obj=v[i];
@@ -1024,54 +1048,95 @@ PhoneSync.prototype.syncDownloads=function() {
 						tableUpdatesChanged=true;
 						changes++;
 					}
-					if (k!=='_deletes') {
-						(function(k, obj) {
-							that.get(k+'-'+obj.id, function(ret) {
-								if (ret===null) {
-									that.options.onDownload(k+'-'+obj.id, obj);
-								}
-								if (that.uuid==obj.uuid) { // originally came from device
-									if (ret===null) {
-										that.save({
-											'key':k+'-'+obj.id,
-											'obj':obj
-										}, false, true);
-										that.options.onUpdate(k+'-'+obj.id, obj);
-									}
-								}
-								else { // created somewhere else
-									that.save({
-										'key':k+'-'+obj.id,
-										'obj':obj
-									}, false, true);
-									that.options.onUpdate(k+'-'+obj.id, obj);
-								}
-							});
-						})(k, obj);
-					}
 				}
 				if (tableUpdatesChanged) {
 					that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
 				}
-			});
-			for (var i=0;i<deletes.length;++i) {
-				if (deletes[i].key===undefined) {
-					deletes[i].key=deletes[i].table_name+'-'+deletes[i].item_id;
+				for (var i=0;i<deletes.length;++i) {
+					if (deletes[i].key===undefined) {
+						deletes[i].key=deletes[i].table_name+'-'+deletes[i].item_id;
+					}
+					that.delete(deletes[i].key);
+					changes++;
 				}
-				that.delete(deletes[i].key);
-				changes++;
+			});
+			// then do the rest
+			var tablesToDo=0;
+			$.each(ret, function(k, v) {
+				tablesToDo++;
+				console.log(k, v);
+				if (!$.isArray(v) || k=='_deletes') {
+					tablesToDo--;
+					return;
+				}
+				var tableUpdatesChanged=false;
+				var i=0;
+				function next() {
+					console.log(v.length-i);
+					if (i==v.length) {
+						if (tableUpdatesChanged) {
+							that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
+						}
+						tablesToDo--;
+						if (!tablesToDo) {
+							that.inSyncDownloads=false;
+							that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
+						}
+						return;
+					}
+					var obj=v[i];
+					i++;
+					if (!that.tables[k].lastUpdate
+						|| obj.last_edited>that.tables[k].lastUpdate
+						) {
+						that.tables[k].lastUpdate=obj.last_edited;
+						tableUpdatesChanged=true;
+						changes++;
+					}
+					(function(k, obj) {
+						that.get(k+'-'+obj.id, function(ret) {
+							console.log(k+'-'+obj.id);
+							if (ret===null) {
+								that.options.onDownload(k+'-'+obj.id, obj);
+							}
+							if (that.uuid==obj.uuid) { // originally came from device
+								if (ret===null) {
+									that.save({
+										'key':k+'-'+obj.id,
+										'obj':obj
+									}, next, true);
+									that.options.onUpdate(k+'-'+obj.id, obj);
+								}
+								else next();
+							}
+							else { // created somewhere else
+								that.save({
+									'key':k+'-'+obj.id,
+									'obj':obj
+								}, next, true);
+								that.options.onUpdate(k+'-'+obj.id, obj);
+							}
+						});
+					})(k, obj);
+				}
+				next();
+			});
+			if (!tablesToDo) {
+				that.inSyncDownloads=false;
+				that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
 			}
-			that.delaySyncDownloads(changes?0:that.options.syncDownloadsTimeout)
 		},
 		function(err) {
 			console.log('failed', err);
+			that.inSyncDownloads=false;
 			that.delaySyncDownloads(that.options.syncDownloadsTimeout);
 		}
 	);
 };
 PhoneSync.prototype.syncUploads=function() {
 	var that=this;
-	if (!that.loggedIn) {
+	if (!that.loggedIn || !window.credentials) {
+		console.log('not logged in. will sync uploads in 15s');
 		return that.delaySyncUploads(15000);
 	}
 	if (that.apiAlreadyInQueue('syncUploads')) {

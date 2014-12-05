@@ -279,8 +279,8 @@ PhoneSync.prototype.apiNext=function() {
 		})
 		.fail(function(ret) {
 			that.apiCalls.push(call);
-			console.log(url);
-			console.log('upload error', url, params, ret);
+			console.log('upload error');
+			console.log(JSON.stringify(ret));
 			fail();
 		})
 		.always(function() {
@@ -517,15 +517,17 @@ PhoneSync.prototype.idAdd=function(name, id, callback) {
 		ret=ret||{'obj':[]};
 		if ($.inArray(id, ret.obj)===-1) {
 			ret.obj.push(id);
-			that.save({
-				'key':name,
-				'obj':ret.obj,
-				'id':id // added to let recursive idAdd work
-			}, callback , true);
+			setZeroTimeout(function() {
+				that.save({
+					'key':name,
+					'obj':ret.obj,
+					'id':id // added to let recursive idAdd work
+				}, callback , true);
+			});
 		}
 		else {
 			if (callback) {
-				callback();
+				setZeroTimeout(callback);
 			}
 		}
 	});
@@ -1064,7 +1066,6 @@ PhoneSync.prototype.syncDownloads=function() {
 			var tablesToDo=0;
 			$.each(ret, function(k, v) {
 				tablesToDo++;
-				console.log(k, v);
 				if (!$.isArray(v) || k=='_deletes') {
 					tablesToDo--;
 					return;
@@ -1072,7 +1073,6 @@ PhoneSync.prototype.syncDownloads=function() {
 				var tableUpdatesChanged=false;
 				var i=0;
 				function next() {
-					console.log(v.length-i);
 					if (i==v.length) {
 						if (tableUpdatesChanged) {
 							that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
@@ -1086,6 +1086,9 @@ PhoneSync.prototype.syncDownloads=function() {
 					}
 					var obj=v[i];
 					i++;
+					if (obj===null) {
+						return setZeroTimeout(next);
+					}
 					if (!that.tables[k].lastUpdate
 						|| obj.last_edited>that.tables[k].lastUpdate
 						) {
@@ -1095,7 +1098,6 @@ PhoneSync.prototype.syncDownloads=function() {
 					}
 					(function(k, obj) {
 						that.get(k+'-'+obj.id, function(ret) {
-							console.log(k+'-'+obj.id);
 							if (ret===null) {
 								that.options.onDownload(k+'-'+obj.id, obj);
 							}
@@ -1127,7 +1129,8 @@ PhoneSync.prototype.syncDownloads=function() {
 			}
 		},
 		function(err) {
-			console.log('failed', err);
+			console.log('failed to sync downloads');
+			console.log(JSON.stringify(err));
 			that.inSyncDownloads=false;
 			that.delaySyncDownloads(that.options.syncDownloadsTimeout);
 		}

@@ -322,7 +322,7 @@ PhoneSync.prototype.delaySyncDownloads=function(delay) {
 	var that=this;
 	delay=delay||that.options.timeout;
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
-	setTimeout(function() {
+	window.PhoneSync_timerSyncDownloads=setTimeout(function() {
 		that.syncDownloads();
 	}, delay);
 }
@@ -510,6 +510,18 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 		this.get(keys[i], getObject);
 	}
 };
+PhoneSync.prototype.getSome=function(keys, callback) {
+	var toGet=keys.length, vals=[];
+	for (var i=0;i<keys.length;++i) {
+		lch.get(keys[i], function(ret) {
+			vals.push(ret);
+			toGet--;
+			if (!toGet) {
+				callback(vals);
+			}
+		});
+	}
+}
 PhoneSync.prototype.idAdd=function(name, id, callback) {
 	var that=this;
 	id=''+id;
@@ -1080,6 +1092,7 @@ PhoneSync.prototype.syncDownloads=function() {
 						tablesToDo--;
 						if (!tablesToDo) {
 							that.inSyncDownloads=false;
+				console.log(changes);
 							that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
 						}
 						return;
@@ -1139,8 +1152,8 @@ PhoneSync.prototype.syncDownloads=function() {
 PhoneSync.prototype.syncUploads=function() {
 	var that=this;
 	if (!that.loggedIn || !window.credentials) {
-		console.log('not logged in. will sync uploads in 15s');
-		return that.delaySyncUploads(15000);
+		console.log('not logged in. will sync uploads in 5s');
+		return that.delaySyncUploads(5000);
 	}
 	if (that.apiAlreadyInQueue('syncUploads')) {
 		return;
@@ -1280,3 +1293,5 @@ PhoneSync.prototype.utf8_encode=function(argString) {
 	}
 	return utftext;
 };
+
+var setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);

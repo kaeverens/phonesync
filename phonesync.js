@@ -257,7 +257,7 @@ PhoneSync.prototype.apiNext=function() {
 		call=this.apiCalls.shift();
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
-	$.post(url, params)
+	that.apiXHR=$.post(url, params)
 		.done(function(ret) {
 			that.options.onNetwork();
 			if (!ret) {
@@ -289,6 +289,15 @@ PhoneSync.prototype.apiNext=function() {
 			that.delayApiNext(1);
 		});
 };
+PhoneSync.prototype.apiQueueClear=function() {
+	var that=this;
+	if (that.apiXHR) {
+		that.apiXHR.abort();
+	}
+	that.apiCalls=[];
+	that.networkInUse=false;
+	that.inSyncDownloads=false;
+}
 PhoneSync.prototype.delayAllowDownloads=function() {
 	var that=this;
 	that.allowDownloads=false;
@@ -1092,7 +1101,6 @@ PhoneSync.prototype.syncDownloads=function() {
 						tablesToDo--;
 						if (!tablesToDo) {
 							that.inSyncDownloads=false;
-				console.log(changes);
 							that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
 						}
 						return;
@@ -1190,6 +1198,11 @@ PhoneSync.prototype.syncUploads=function() {
 					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads(1);
 				}, true);
+			}
+			if (that.inSyncDownloads) {
+				that.inSyncDownloads=false;
+				that.networkInUse=false;
+				that.apiXHR.abort();
 			}
 			that.api(
 				'syncUploads', ret,

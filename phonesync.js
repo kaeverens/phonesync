@@ -6,7 +6,7 @@ function PhoneSync(params) {
 	}
 	this.options={
 		'dbName':'tmp',
-		'dbType':/http/.test(document.location.toString())?'none':'file',
+		'dbType':/http/.test(document.location.toString())?'indexeddb':'file',
 		'md5':false, // send MD5 checks
 		'timeout':1000, // milliseconds
 		'version':0, // version parameter to send to server as _v
@@ -92,6 +92,41 @@ function PhoneSync(params) {
 			},
 			null
 		);
+	}
+	else if (this.options.dbType=='indexeddb') {
+		try {
+			var dbreq=window.indexedDB.open(that.options.dbName, 3);
+			dbreq.onsuccess=function(ev) {
+				that.fs=ev.target.result;
+				that.delaySyncDownloads();
+				that.delaySyncUploads();
+				that.get('_tables', function(ret) {
+					if (null === ret) {
+						return;
+					}
+					$.extend(that.tables, ret.obj);
+				});
+				that.get('_files', function(ret) {
+					if (null === ret) {
+						that.save({
+							'key':'_files',
+							'files':{'_files':1}
+						}, null, true);
+					}
+				});
+				that.options.ready(that);
+			};
+			dbreq.onupgradeneeded=function(e) {
+				console.log('upgrading');
+				that.fs=e.target.result;
+				if (!that.fs.objectStoreNames.contains(that.options.dbName)) {
+					that.fs.createObjectStore(that.options.dbName);
+				}
+			}
+		}
+		catch (e) {
+			console.log(e);
+		}
 	}
 	else {
 		that.save({
@@ -327,6 +362,13 @@ PhoneSync.prototype.delayFilePutJSON=function(delay) {
 		that.filePutJSON();
 	}, delay||that.options.timeout);
 };
+PhoneSync.prototype.delayIdxPutJSON=function(delay) {
+	var that=this;
+	window.clearTimeout(window.PhoneSync_timerIdxPutQueue);
+	window.PhoneSync_timerIdxPutQueue=window.setTimeout(function() {
+		that.idxPutJSON();
+	}, delay||that.options.timeout);
+};
 PhoneSync.prototype.delaySyncDownloads=function(delay) {
 	var that=this;
 	delay=delay||that.options.timeout;
@@ -342,7 +384,6 @@ PhoneSync.prototype.delaySyncUploads=function(delay) {
 		that.syncUploads();
 	}, delay||that.options.timeout);
 };
-//noinspection ReservedWordAsName
 PhoneSync.prototype.delete=function(key, callback) {
 	var that=this;
 	if (this.disableFS) {
@@ -355,19 +396,29 @@ PhoneSync.prototype.delete=function(key, callback) {
 	if (callback) {
 		callback();
 	}
-	if ('none'===that.options.dbType) {
-		that.get('_files', function(ret) {
-			if (ret===null) {
-				return;
-			}
-			if (ret.files[key]) {
-				delete ret.files[key];
-				that.save(ret);
-			}
-		});
+	if ('indexeddb' === that.options.dbType) {
+		var txn=that.fs.transaction([that.options.dbName], 'readwrite');
+		if (txn) {
+			var store=txn.objectStore(that.options.dbName);
+			store.delete(key);
+			store.onsuccess=function(ev) {
+				that.get('_files', function(ret) {
+					if (ret===null) {
+						return;
+					}
+					if (ret.files[key]) {
+						delete ret.files[key];
+						that.save(ret, null, true);
+					}
+				});
+			};
+		}
+		else {
+			console.log('could not open indexeddb transaction');
+		}
 	}
-	else {
-		this.fs.getFile(key, {create: false, exclusive: false}, function(file) {
+	else if ('files' === that.options.dbType) {
+		that.fs.getFile(key, {create: false, exclusive: false}, function(file) {
 			file.remove();
 			that.get('_files', function(ret) {
 				if (ret===null) {
@@ -380,196 +431,49 @@ PhoneSync.prototype.delete=function(key, callback) {
 			});
 		});
 	}
-	this.options.onDelete(key);
-};
-PhoneSync.prototype.get=function(key, callback, download) {
-	function doTheGet(rekeys) {
-		if (null !== rekeys && rekeys.changes[key]) {
-			key=rekeys.changes[key];
-		}
-		if (that.cache._files) {
-			if (that.cache._files.files[key]===undefined && (undefined===download || !download)) {
-				if ('_rekeys' === key) {
-					var rekeys={
-						'key':'_rekeys',
-						'changes':{}
-					};
-					lch.save(rekeys, null, true);
-					callback(rekeys);
-					return rekeys;
-				}
-				return fail();
-			}
-		}
-		for (var i=0;i<that.fileGetQueue.length;++i) {
-			if (that.fileGetQueue[i]===key) {
-				//noinspection JSHint
-				setTimeout(function() {
-					that.get(key, callback, download);
-				}, that.options.timeout);
+	else {
+		that.get('_files', function(ret) {
+			if (ret===null) {
 				return;
 			}
-		}
-		that.fileGetQueue.push(key);
-		that.fileGetJSON(key,
-			function(obj) {
-				var arr=[];
-				for (var i=0;i<that.fileGetQueue.length;++i) {
-					if (that.fileGetQueue[i]!==key) {
-						arr.push(that.fileGetQueue[i]);
-					}
-				}
-				that.fileGetQueue=arr;
-				that.cache[key]=obj;
-				callback($.extend({}, obj));
-			},
-			function() {
-				if (download) {
-					that.api('syncDownloadOne', {
-						'key':key
-					}, function(ret) {
-						var obj={
-							'key':key,
-							'obj':ret
-						};
-						that.save(obj);
-						callback(obj);
-					}, fail, function() {
-						console.log('offline - cannot download missing resource: '+key);
-					});
-				}
-				else {
-					fail();
-				}
-			}
-		);
-	}
-	function fail() {
-		var arr=[];
-		for (var i=0;i<that.fileGetQueue.length;++i) {
-			if (that.fileGetQueue[i]!==key) {
-				arr.push(that.fileGetQueue[i]);
-			}
-		}
-		that.fileGetQueue=arr;
-		callback(null);
-	}
-	var that=this;
-	if (this.disableFS) {
-		return;
-	}
-	if (this.cache[key]) {
-		if (!(this.cache[key]===null && download)) {
-			return callback($.extend({}, this.cache[key]));
-		}
-	}
-	if ('_rekeys' === key) {
-		doTheGet(null);
-	}
-	else {
-		that.get('_rekeys', doTheGet);
-	}
-};
-PhoneSync.prototype.getAll=function(key, callback) {
-	var that=this;
-	if (this.disableFS) {
-		return;
-	}
-	var keys=[];
-	if (this.cache[key]) {
-		keys=this.cache[key].obj;
-	}
-	else {
-		this.get(key, function(ret) {
-			if (ret===undefined || ret===null) {
-				return callback([]);
-			}
-			that.getAll(key, callback);
-		});
-		return;
-	}
-	var rows=[];
-	var toGet=keys.length;
-	function getObject(ret) {
-		rows.push($.extend({}, ret));
-		toGet--;
-		if (!toGet) {
-			callback(rows);
-		}
-	}
-	for (var i=0;i<keys.length;++i) {
-		this.get(key+'-'+keys[i], getObject);
-	}
-};
-//noinspection JSUnusedGlobalSymbols
-PhoneSync.prototype.getAllById=function(keys, callback) {
-	if (this.disableFS) {
-		return;
-	}
-	var rows=[];
-	var toGet=keys.length;
-	function getObject(ret) {
-		rows.push($.extend({}, ret));
-		toGet--;
-		if (!toGet) {
-			callback(rows);
-		}
-	}
-	for (var i=0;i<keys.length;++i) {
-		this.get(keys[i], getObject);
-	}
-};
-PhoneSync.prototype.getSome=function(keys, callback) {
-	var toGet=keys.length, vals=[];
-	for (var i=0;i<keys.length;++i) {
-		lch.get(keys[i], function(ret) {
-			vals.push(ret);
-			toGet--;
-			if (!toGet) {
-				callback(vals);
+			if (ret.files[key]) {
+				delete ret.files[key];
+				that.save(ret);
 			}
 		});
 	}
-}
-PhoneSync.prototype.idAdd=function(name, id, callback) {
-	var that=this;
-	id=''+id;
-	this.get(name, function(ret) {
-		ret=ret||{'obj':[]};
-		if ($.inArray(id, ret.obj)===-1) {
-			ret.obj.push(id);
-			setZeroTimeout(function() {
-				that.save({
-					'key':name,
-					'obj':ret.obj,
-					'id':id // added to let recursive idAdd work
-				}, callback , true);
-			});
-		}
-		else {
-			if (callback) {
-				setZeroTimeout(callback);
-			}
-		}
-	});
+	this.options.onDelete(key);
 };
-PhoneSync.prototype.idDel=function(name, id) {
+PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	var that=this;
-	id=''+id;
-	this.get(name, function(ret) {
-		ret=ret||{'obj':[]};
-		var arr=[];
-		for (var i=0;i<ret.obj.length;++i) {
-			if (id !== ret.obj[i]) {
-				arr.push(ret.obj[i]);
-			}
-		}
-		that.save({
-			'key':name,
-			'obj':arr,
-			'id':id // added to let recursive idAdd work
-		}, false, true);
-	});
+	if (this.disableFS) {
+		return;
+	}
+	if (!this.fs) {
+		return window.setTimeout(function() {
+			that.fileGetJSON(name, success, fail);
+		}, that.options.timeout);
+	}
+	this.fs.getFile(this.sanitise(name), {'create':false, 'exclusive':false},
+		function(entry) {
+			entry.file(
+				function(file) {
+					var reader=new FileReader();
+					reader.onloadend=function(evt) {
+						if (evt.target.result) {
+							success(JSON.parse(evt.target.result));
+						}
+						else {
+							fail();
+						}
+					};
+					reader.readAsText(file);
+				},
+				fail
+			);
+		},
+		fail
+	);
 };
 PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var that=this;
@@ -646,36 +550,332 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	}
 	// }
 };
-PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
+PhoneSync.prototype.get=function(key, callback, download) {
+	function doTheGet(rekeys) {
+		if (!(undefined===rekeys || null === rekeys) && rekeys.changes && rekeys.changes[key]) {
+			key=rekeys.changes[key];
+		}
+		if (that.cache._files) {
+			if (that.cache._files.files[key]===undefined && (undefined===download || !download)) {
+				if ('_rekeys' === key) {
+					var rekeys={
+						'key':'_rekeys',
+						'changes':{}
+					};
+					lch.save(rekeys, null, true);
+					callback(rekeys);
+					return rekeys;
+				}
+				return fail();
+			}
+		}
+		for (var i=0;i<that.fileGetQueue.length;++i) {
+			if (that.fileGetQueue[i]===key) {
+				//noinspection JSHint
+				setTimeout(function() {
+					that.get(key, callback, download);
+				}, that.options.timeout);
+				return;
+			}
+		}
+		that.fileGetQueue.push(key);
+		if (that.options.dbType=='file') {
+			that.fileGetJSON(key,
+				function(obj) {
+					var arr=[];
+					for (var i=0;i<that.fileGetQueue.length;++i) {
+						if (that.fileGetQueue[i]!==key) {
+							arr.push(that.fileGetQueue[i]);
+						}
+					}
+					that.fileGetQueue=arr;
+					that.cache[key]=obj;
+					callback($.extend({}, obj));
+				},
+				function() {
+					if (download) {
+						that.api('syncDownloadOne', {
+							'key':key
+						}, function(ret) {
+							var obj={
+								'key':key,
+								'obj':ret
+							};
+							that.save(obj);
+							callback(obj);
+						}, fail, function() {
+							console.log('offline - cannot download missing resource: '+key);
+						});
+					}
+					else {
+						fail();
+					}
+				}
+			);
+		}
+		else if (that.options.dbType=='indexeddb') {
+			that.idxGetJSON(key,
+				function(obj) {
+					var arr=[];
+					for (var i=0;i<that.fileGetQueue.length;++i) {
+						if (that.fileGetQueue[i]!==key) {
+							arr.push(that.fileGetQueue[i]);
+						}
+					}
+					that.fileGetQueue=arr;
+					that.cache[key]=obj;
+					callback($.extend({}, obj));
+				},
+				function() {
+					if (download) {
+						that.api('syncDownloadOne', {
+							'key':key
+						}, function(ret) {
+							var obj={
+								'key':key,
+								'obj':ret
+							};
+							that.save(obj);
+							callback(obj);
+						}, fail, function() {
+							console.log('offline - cannot download missing resource: '+key);
+						});
+					}
+					else {
+						fail();
+					}
+				}
+			);
+		}
+	}
+	function fail() {
+		var arr=[];
+		for (var i=0;i<that.fileGetQueue.length;++i) {
+			if (that.fileGetQueue[i]!==key) {
+				arr.push(that.fileGetQueue[i]);
+			}
+		}
+		that.fileGetQueue=arr;
+		callback(null);
+	}
+	var that=this;
+	if (this.disableFS) {
+		return;
+	}
+	if (this.cache[key]) {
+		if (!(this.cache[key]===null && download)) {
+			return callback($.extend({}, this.cache[key]));
+		}
+	}
+	if ('_rekeys' === key) {
+		doTheGet(null);
+	}
+	else {
+		that.get('_rekeys', doTheGet);
+	}
+};
+PhoneSync.prototype.getAll=function(key, callback) {
+	var that=this;
+	if (this.disableFS) {
+		return;
+	}
+	var keys=[];
+	if (this.cache[key]) {
+		keys=this.cache[key].obj;
+	}
+	else {
+		this.get(key, function(ret) {
+			if (ret===undefined || ret===null) {
+				return callback([]);
+			}
+			that.getAll(key, callback);
+		});
+		return;
+	}
+	var rows=[];
+	var toGet=keys.length;
+	function getObject(ret) {
+		rows.push($.extend({}, ret));
+		toGet--;
+		if (!toGet) {
+			callback(rows);
+		}
+	}
+	for (var i=0;i<keys.length;++i) {
+		this.get(key+'-'+keys[i], getObject);
+	}
+};
+PhoneSync.prototype.getAllById=function(keys, callback) {
+	if (this.disableFS) {
+		return;
+	}
+	var rows=[];
+	var toGet=keys.length;
+	function getObject(ret) {
+		rows.push($.extend({}, ret));
+		toGet--;
+		if (!toGet) {
+			callback(rows);
+		}
+	}
+	for (var i=0;i<keys.length;++i) {
+		this.get(keys[i], getObject);
+	}
+};
+PhoneSync.prototype.getSome=function(keys, callback) {
+	var toGet=keys.length, vals=[];
+	for (var i=0;i<keys.length;++i) {
+		lch.get(keys[i], function(ret) {
+			vals.push(ret);
+			toGet--;
+			if (!toGet) {
+				callback(vals);
+			}
+		});
+	}
+}
+PhoneSync.prototype.idAdd=function(name, id, callback) {
+	var that=this;
+	id=''+id;
+	this.get(name, function(ret) {
+		if (!ret || !ret.obj) {
+			ret={'obj':[]};
+		}
+		if ($.inArray(id, ret.obj)===-1) {
+			ret.obj.push(id);
+			setZeroTimeout(function() {
+				that.save({
+					'key':name,
+					'obj':ret.obj,
+					'id':id // added to let recursive idAdd work
+				}, callback , true);
+			});
+		}
+		else {
+			if (callback) {
+				setZeroTimeout(callback);
+			}
+		}
+	});
+};
+PhoneSync.prototype.idDel=function(name, id) {
+	var that=this;
+	id=''+id;
+	this.get(name, function(ret) {
+		ret=ret||{'obj':[]};
+		var arr=[];
+		for (var i=0;i<ret.obj.length;++i) {
+			if (id !== ret.obj[i]) {
+				arr.push(ret.obj[i]);
+			}
+		}
+		that.save({
+			'key':name,
+			'obj':arr,
+			'id':id // added to let recursive idAdd work
+		}, false, true);
+	});
+};
+PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
+	var that=this;
+	if (that.disableFS || 'none'===that.options.dbType) {
+		return callback?callback():0;
+	}
+	// { if a file is submitted, queue it and come back later
+	if (name && obj) {
+		for (var i=1;i<that.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
+			var f=that.filePutQueue[i];
+			if (f[0]===name) {
+				that.filePutQueue.splice(i, 1);
+				//noinspection BreakStatementJS
+			 break;
+			}
+		}
+		that.filePutQueue.push([name, obj, callback]);
+		return that.delayIdxPutJSON(1);
+	}
+	// }
+	// { if a file is currently being written, then come back later
+	if (that.idxPutJSONLock) {
+		return that.delayIdxPutJSON(1);
+	}
+	// }
+	// { write a file
+	that.idxPutJSONLock=true;
+	var o=that.filePutQueue.shift();
+	if (o) {
+		name=o[0];
+		obj=o[1];
+		callback=o[2];
+
+		var txn=that.fs.transaction([that.options.dbName], 'readwrite');
+		var store=txn.objectStore(that.options.dbName);
+		txn.onerror=function(e) {
+			console.log('ERROR', 'failed to create file', e);
+			that.filePutQueue.unshift(o);
+			that.delayIdxPutJSON();
+		}
+		txn.oncomplete=function() {
+			if (callback) {
+				callback();
+			}
+			if (name!=='_files') {
+				that.get('_files', function(ret) {
+					if (ret===null || ret.files===undefined) {
+						ret={
+							'key':'_files',
+							'files':{'_files':1}
+						};
+					}
+					if (ret.files[name]===undefined) {
+						ret.files[name]=1;
+						setZeroTimeout(function() {
+							that.save(ret, null, true);
+						});
+					}
+				});
+			}
+			that.idxPutJSONLock=false;
+			if (that.filePutQueue.length) {
+				that.delayIdxPutJSON(1);
+			}
+		}
+		store.put(obj, name);
+	}
+	else {
+		if (that.filePutQueue.length) {
+			that.delayIdxPutJSON(1);
+		}
+	}
+	// }
+};
+PhoneSync.prototype.idxGetJSON=function(name, success, fail) {
 	var that=this;
 	if (this.disableFS) {
 		return;
 	}
 	if (!this.fs) {
 		return window.setTimeout(function() {
-			that.fileGetJSON(name, success, fail);
+			that.idxGetJSON(name, success, fail);
 		}, that.options.timeout);
 	}
-	this.fs.getFile(this.sanitise(name), {'create':false, 'exclusive':false},
-		function(entry) {
-			entry.file(
-				function(file) {
-					var reader=new FileReader();
-					reader.onloadend=function(evt) {
-						if (evt.target.result) {
-							success(JSON.parse(evt.target.result));
-						}
-						else {
-							fail();
-						}
-					};
-					reader.readAsText(file);
-				},
-				fail
-			);
-		},
-		fail
-	);
+	var txn=that.fs.transaction([that.options.dbName]);
+	if (txn) {
+		var store=txn.objectStore(that.options.dbName);
+		var ob=store.get(name);
+		ob.onsuccess=function(ev) {
+			if (ob.result===undefined) {
+				ob.result=null;
+			}
+			success(ob.result);
+		};
+		ob.fail=function() {
+			fail();
+		}
+	}
+	else {
+		console.log('could not open indexeddb transaction');
+	}
 };
 PhoneSync.prototype.md5=function(str) {
 	//  discuss at: http://phpjs.org/functions/md5/
@@ -904,10 +1104,10 @@ PhoneSync.prototype.md5=function(str) {
 
 	return temp.toLowerCase();
 };
-//noinspection JSUnusedGlobalSymbols
 PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
-	if ('none'!==that.options.dbType) {
+	console.log(that.options.dbType);
+	if (that.options.dbType=='file') {
 		that.disableFS=true;
 		try {
 			that.fs.removeRecursively(function() {
@@ -950,6 +1150,12 @@ PhoneSync.prototype.nuke=function(callback) {
 			console.log(e);
 		}
 	}
+	else if (that.options.dbType=='indexeddb') {
+		console.log(that.fs);
+		that.disableFS=true;
+		indexedDB.deleteDatabase('FieldMotion');
+		document.location='main.html';
+	}
 	else {
 		callback();
 	}
@@ -957,7 +1163,6 @@ PhoneSync.prototype.nuke=function(callback) {
 	that.alreadyDoingSyncUpload=0;
 	that.cache={};
 };
-//noinspection JSUnusedGlobalSymbols
 PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	var that=this;
 	if (oldId==newId) {
@@ -1002,7 +1207,12 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 			if (!(nosync || /^_/.test(obj.key))) {
 				that.addToSyncUploads(obj.key);
 			}
-			that.filePutJSON(obj.key, obj, onSave);
+			if (that.options.dbType=='file') {
+				that.filePutJSON(obj.key, obj, onSave);
+			}
+			else if (that.options.dbType=='indexeddb') {
+				that.idxPutJSON(obj.key, obj, onSave);
+			}
 		});
 	}
 	else {
@@ -1012,7 +1222,12 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 		if (!nosync) {
 			that.addToSyncUploads(obj.key);
 		}
-		that.filePutJSON(obj.key, obj, onSave);
+		if (that.options.dbType=='file') {
+			that.filePutJSON(obj.key, obj, onSave);
+		}
+		else if (that.options.dbType=='indexeddb') {
+			that.idxPutJSON(obj.key, obj, onSave);
+		}
 	}
 };
 PhoneSync.prototype.syncDownloads=function() {
@@ -1160,7 +1375,6 @@ PhoneSync.prototype.syncDownloads=function() {
 PhoneSync.prototype.syncUploads=function() {
 	var that=this;
 	if (!that.loggedIn || !window.credentials) {
-		console.log('not logged in. will sync uploads in 5s');
 		return that.delaySyncUploads(5000);
 	}
 	if (that.apiAlreadyInQueue('syncUploads')) {

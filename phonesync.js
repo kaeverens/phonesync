@@ -6,7 +6,8 @@ function PhoneSync(params) {
 	}
 	this.options={
 		'dbName':'tmp',
-		'dbType':/http/.test(document.location.toString())?'indexeddb':'file',
+		'dbType':params.dbType
+			|| (/http/.test(document.location.toString())?'indexeddb':'file'),
 		'md5':false, // send MD5 checks
 		'timeout':1000, // milliseconds
 		'version':0, // version parameter to send to server as _v
@@ -163,15 +164,20 @@ PhoneSync.prototype.addToSyncUploads=function(key) {
 PhoneSync.prototype.api=function(action, params, success, fail) {
 	var uid=0;
 	if (window.credentials) {
-		params._userdata={
-			'username':credentials.email,
-			'password':credentials.password
-		};
+		if (credentials.email && credentials.password) {
+			params._userdata={
+				'username':credentials.email,
+				'password':credentials.password
+			};
+		}
 		uid=credentials.user_id;
+		if (credentials.session_id) {
+			params.PHPSESSID=credentials.session_id;
+		}
 	}
-	else {
-		params._userdata='unknown';
-	}
+//	else {
+//		params._userdata='unknown';
+//	}
 	if (this.options.urls[action]===undefined) {
 		console.log('no url defined for the action', action);
 		fail();

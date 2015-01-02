@@ -215,6 +215,9 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 				else if (null === obj[prop]) {
 					delete obj[prop];
 				}
+				else if ('' === obj[prop]) {
+					delete obj[prop];
+				}
 			}
 		}
 	}

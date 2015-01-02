@@ -320,8 +320,6 @@ PhoneSync.prototype.apiNext=function() {
 		})
 		.fail(function(ret) {
 			that.apiCalls.push(call);
-			console.log('upload error');
-			console.log(JSON.stringify(ret));
 			fail();
 		})
 		.always(function() {
@@ -600,6 +598,11 @@ PhoneSync.prototype.get=function(key, callback, download) {
 				},
 				function() {
 					if (download) {
+						if (that.inSyncDownloads) {
+							that.inSyncDownloads=false;
+							that.networkInUse=false;
+							that.apiXHR.abort();
+						}
 						that.api('syncDownloadOne', {
 							'key':key
 						}, function(ret) {
@@ -620,8 +623,36 @@ PhoneSync.prototype.get=function(key, callback, download) {
 			);
 		}
 		else if (that.options.dbType=='indexeddb') {
-			that.idxGetJSON(key,
+			function fail2() {
+				if (download) {
+					if (that.inSyncDownloads) {
+						that.inSyncDownloads=false;
+						that.networkInUse=false;
+						that.apiXHR.abort();
+					}
+					that.api('syncDownloadOne', {
+						'key':key
+					}, function(ret) {
+						var obj={
+							'key':key,
+							'obj':ret
+						};
+						that.save(obj);
+						callback(obj);
+					}, fail, function() {
+						console.log('offline - cannot download missing resource: '+key);
+					});
+				}
+				else {
+					fail();
+				}
+			}
+			that.idxGetJSON(
+				key,
 				function(obj) {
+					if (obj===undefined) {
+						return fail2();
+					}
 					var arr=[];
 					for (var i=0;i<that.fileGetQueue.length;++i) {
 						if (that.fileGetQueue[i]!==key) {
@@ -632,25 +663,7 @@ PhoneSync.prototype.get=function(key, callback, download) {
 					that.cache[key]=obj;
 					callback($.extend({}, obj));
 				},
-				function() {
-					if (download) {
-						that.api('syncDownloadOne', {
-							'key':key
-						}, function(ret) {
-							var obj={
-								'key':key,
-								'obj':ret
-							};
-							that.save(obj);
-							callback(obj);
-						}, fail, function() {
-							console.log('offline - cannot download missing resource: '+key);
-						});
-					}
-					else {
-						fail();
-					}
-				}
+				fail2
 			);
 		}
 	}
@@ -1371,8 +1384,6 @@ PhoneSync.prototype.syncDownloads=function() {
 			}
 		},
 		function(err) {
-			console.log('failed to sync downloads');
-			console.log(JSON.stringify(err));
 			that.inSyncDownloads=false;
 			that.delaySyncDownloads(that.options.syncDownloadsTimeout);
 		}

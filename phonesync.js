@@ -201,7 +201,8 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			if (obj.hasOwnProperty(prop)) {
 				if (typeof obj[prop]==="object"){
 					recursiveClean(obj[prop]); // clean the contents of this object
-					if (JSON.stringify(obj[prop])==='{}') { // if the object is now empty, remove it
+					var json=JSON.stringify(obj[prop]);
+					if (json==='{}' || json==='[]') { // if the object is now empty, remove it
 						delete obj[prop];
 					}
 				}

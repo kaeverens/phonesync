@@ -1404,6 +1404,9 @@ PhoneSync.prototype.syncUploads=function() {
 	if (that.alreadyDoingSyncUpload) {
 		return that.delaySyncUploads(1);
 	}
+	if (that.inSyncDownloads) {
+		that.apiQueueClear();
+	}
 	var numberOfUploads=++that.numberOfUploads;
 	if (that.disableFS) {
 		return;

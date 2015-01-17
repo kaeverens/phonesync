@@ -1176,8 +1176,8 @@ PhoneSync.prototype.nuke=function(callback) {
 	else if (that.options.dbType=='indexeddb') {
 		console.log(that.fs);
 		that.disableFS=true;
-		indexedDB.deleteDatabase('FieldMotion');
-		document.location='main.html';
+		indexedDB.deleteDatabase(that.options.dbName);
+		document.location='./';
 	}
 	else {
 		callback();

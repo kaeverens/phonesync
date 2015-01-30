@@ -558,7 +558,10 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	}
 	// }
 };
-PhoneSync.prototype.get=function(key, callback, download) {
+PhoneSync.prototype.get=function(key, callback, download, failcallback) {
+	if (!callback) {
+		callback=function() {};
+	}
 	function doTheGet(rekeys) {
 		if (!(undefined===rekeys || null === rekeys) && rekeys.changes && rekeys.changes[key]) {
 			key=rekeys.changes[key];
@@ -580,10 +583,9 @@ PhoneSync.prototype.get=function(key, callback, download) {
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]===key) {
 				//noinspection JSHint
-				setTimeout(function() {
+				return setZeroTimeout(function() {
 					that.get(key, callback, download);
-				}, that.options.timeout);
-				return;
+				});
 			}
 		}
 		that.fileGetQueue.push(key);
@@ -672,6 +674,9 @@ PhoneSync.prototype.get=function(key, callback, download) {
 		}
 	}
 	function fail() {
+		if (failcallback) {
+			failcallback();
+		}
 		var arr=[];
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]!==key) {
@@ -694,7 +699,13 @@ PhoneSync.prototype.get=function(key, callback, download) {
 		doTheGet(null);
 	}
 	else {
-		that.get('_rekeys', doTheGet);
+		that.get('_rekeys', doTheGet, false, function() {
+			obj={
+				'key':'_rekeys',
+				'changes':{}
+			};
+			lch.save(obj, false, true);
+		});
 	}
 };
 PhoneSync.prototype.getAll=function(key, callback) {
@@ -735,7 +746,9 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 	var rows=[];
 	var toGet=keys.length;
 	function getObject(ret) {
-		rows.push($.extend({}, ret));
+		if (ret!==null) {
+			rows.push($.extend({}, ret));
+		}
 		toGet--;
 		if (!toGet) {
 			callback(rows);

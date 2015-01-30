@@ -96,34 +96,7 @@ function PhoneSync(params) {
 	}
 	else if (this.options.dbType=='indexeddb') {
 		try {
-			var dbreq=window.indexedDB.open(that.options.dbName, 3);
-			dbreq.onsuccess=function(ev) {
-				that.fs=ev.target.result;
-				that.delaySyncDownloads();
-				that.delaySyncUploads();
-				that.get('_tables', function(ret) {
-					if (null === ret) {
-						return;
-					}
-					$.extend(that.tables, ret.obj);
-				});
-				that.get('_files', function(ret) {
-					if (null === ret) {
-						that.save({
-							'key':'_files',
-							'files':{'_files':1}
-						}, null, true);
-					}
-				});
-				that.options.ready(that);
-			};
-			dbreq.onupgradeneeded=function(e) {
-				console.log('upgrading');
-				that.fs=e.target.result;
-				if (!that.fs.objectStoreNames.contains(that.options.dbName)) {
-					that.fs.createObjectStore(that.options.dbName);
-				}
-			}
+			that.dbSetupIndexedDB();
 		}
 		catch (e) {
 			console.log(e);
@@ -340,6 +313,36 @@ PhoneSync.prototype.apiQueueClear=function() {
 	that.apiCalls=[];
 	that.networkInUse=false;
 	that.inSyncDownloads=false;
+}
+PhoneSync.prototype.dbSetupIndexedDB=function() {
+	var that=this, dbreq=window.indexedDB.open(that.options.dbName, 3);
+	dbreq.onsuccess=function(ev) {
+		that.fs=ev.target.result;
+		that.delaySyncDownloads();
+		that.delaySyncUploads();
+		that.get('_tables', function(ret) {
+			if (null === ret) {
+				return;
+			}
+			$.extend(that.tables, ret.obj);
+		});
+		that.get('_files', function(ret) {
+			if (null === ret) {
+				that.save({
+					'key':'_files',
+					'files':{'_files':1}
+				}, null, true);
+			}
+		});
+		that.options.ready(that);
+	};
+	dbreq.onupgradeneeded=function(e) {
+		console.log('upgrading');
+		that.fs=e.target.result;
+		if (!that.fs.objectStoreNames.contains(that.options.dbName)) {
+			that.fs.createObjectStore(that.options.dbName);
+		}
+	}
 }
 PhoneSync.prototype.delayAllowDownloads=function() {
 	var that=this;
@@ -1142,7 +1145,6 @@ PhoneSync.prototype.md5=function(str) {
 };
 PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
-	console.log(that.options.dbType);
 	if (that.options.dbType=='file') {
 		that.disableFS=true;
 		try {
@@ -1187,13 +1189,20 @@ PhoneSync.prototype.nuke=function(callback) {
 		}
 	}
 	else if (that.options.dbType=='indexeddb') {
-		console.log(that.fs);
 		that.disableFS=true;
-		indexedDB.deleteDatabase(that.options.dbName);
-		document.location='./';
+		console.log('okay - about to request the deletion');
+		var req=indexedDB.deleteDatabase(that.options.dbName);
+		req.onerror=function() {
+			console.log('failed to nuke');
+		}
+		if (callback) {
+			callback();
+		}
 	}
 	else {
-		callback();
+		if (callback) {
+			callback();
+		}
 	}
 	that.tablesLastUpdateClear();
 	that.alreadyDoingSyncUpload=0;

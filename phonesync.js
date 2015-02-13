@@ -236,7 +236,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			.replace(/,\\*"[^"]*":\[\]/, '')
 			.replace(/\\*"[^"]*":\[\],/, '')
 			.replace(/[\u2018\u2019]/g, "'")
-			.replace(/[\u201C\u201D]/g, '"');
+			.replace(/[\u201C\u201D]/g, '\\"');
 		params=JSON.parse(json);
 		params._md5=this.md5(json);
 	}
@@ -469,6 +469,12 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 					var reader=new FileReader();
 					reader.onloadend=function(evt) {
 						if (evt.target.result) {
+//							evt.target.result=evt.target.result.replace(/\”/g, 'in');
+							evt.target.result=evt.target.result
+								.replace(/,\\*"[^"]*":\[\]/, '')
+								.replace(/\\*"[^"]*":\[\],/, '')
+								.replace(/[\u2018\u2019]/g, "'")
+								.replace(/[\u201C\u201D]/g, '\\"');
 							success(JSON.parse(evt.target.result));
 						}
 						else {
@@ -600,6 +606,7 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 					}
 					that.fileGetQueue=arr;
 					that.cache[key]=obj;
+					console.log(obj);
 					callback($.extend({}, obj));
 				},
 				function() {

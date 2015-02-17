@@ -473,12 +473,12 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 					reader.onloadend=function(evt) {
 						if (evt.target.result) {
 //							evt.target.result=evt.target.result.replace(/\”/g, 'in');
-							evt.target.result=evt.target.result
+							var res=evt.target.result
 								.replace(/,\\*"[^"]*":\[\]/, '')
 								.replace(/\\*"[^"]*":\[\],/, '')
 								.replace(/[\u2018\u2019]/g, "'")
 								.replace(/[\u201C\u201D]/g, '\\"');
-							success(JSON.parse(evt.target.result));
+							success(JSON.parse(res));
 						}
 						else {
 							fail();

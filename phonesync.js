@@ -116,11 +116,16 @@ function PhoneSync(params) {
 		that.delaySyncDownloads();
 		that.delaySyncUploads();
 	});
+	setInterval(function() {
+		console.log('triggering uploads/downloads just in case');
+		that.delaySyncUploads();
+		that.delaySyncDownloads();
+	}, 60000);
 }
 PhoneSync.prototype.addToSyncUploads=function(key) {
 	var that=this;
 	this.get('_syncUploads', function(ret) {
-		if (!ret || ret===undefined) {
+		if (!ret || ret===undefined || ret.keys===undefined) {
 			ret={
 				'key':'_syncUploads',
 				'keys':[]
@@ -148,9 +153,6 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			params.PHPSESSID=credentials.session_id;
 		}
 	}
-//	else {
-//		params._userdata='unknown';
-//	}
 	if (this.options.urls[action]===undefined) {
 		console.log('no url defined for the action', action);
 		fail();
@@ -205,11 +207,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			}
 			return v;
 		});
-		json=json
-			.replace(/,\\*"[^"]*":\[\]/, '')
-			.replace(/\\*"[^"]*":\[\],/, '')
-			.replace(/[\u2018\u2019]/g, "'")
-			.replace(/[\u201C\u201D]/g, '\\"');
+		json=this.utf8Clean(json);
 		params=JSON.parse(json);
 		params._md5=this.md5(json);
 	}
@@ -238,17 +236,15 @@ PhoneSync.prototype.apiNext=function() {
 		return;
 	}
 	if (that.networkInUse) {
-		return that.delayApiNext(1000);
+		if (that.networkInUse>(new Date)) {
+			return that.delayApiNext(1000);
+		}
+		that.networkInUse=false;
+		return that.delayApiNext(1);
 	}
-	that.networkInUse=true;
+	that.networkInUse=new Date;
+	that.networkInUse.setSeconds(that.networkInUse.getSeconds()+240); // block the network for the next 240 seconds
 	clearTimeout(window.PhoneSync_timersClearNetwork);
-	window.PhoneSync_timersClearNetwork=window.setTimeout( // in case of event failure
-		function() {
-			console.log('server failed to respond within 240 seconds. trying again.');
-			that.networkInUse=false;
-			that.delayApiNext(1);
-		}, 240000
-	);
 	that.options.onBeforeNetwork();
 	var call=false;
 	// { login/logout are priority
@@ -472,12 +468,7 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 					var reader=new FileReader();
 					reader.onloadend=function(evt) {
 						if (evt.target.result) {
-//							evt.target.result=evt.target.result.replace(/\”/g, 'in');
-							var res=evt.target.result
-								.replace(/,\\*"[^"]*":\[\]/, '')
-								.replace(/\\*"[^"]*":\[\],/, '')
-								.replace(/[\u2018\u2019]/g, "'")
-								.replace(/[\u201C\u201D]/g, '\\"');
+							var res=that.utf8Clean(evt.target.result);
 							success(JSON.parse(res));
 						}
 						else {
@@ -609,7 +600,7 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 					}
 					that.fileGetQueue=arr;
 					that.cache[key]=obj;
-					console.log(obj);
+					console.log(JSON.stringify(obj));
 					callback($.extend({}, obj));
 				},
 				function() {
@@ -810,9 +801,12 @@ PhoneSync.prototype.idDel=function(name, id) {
 	this.get(name, function(ret) {
 		ret=ret||{'obj':[]};
 		var arr=[];
-		for (var i=0;i<ret.obj.length;++i) {
-			if (id !== ret.obj[i]) {
-				arr.push(ret.obj[i]);
+		console.log(name, ret)
+		if (ret.obj) {
+			for (var i=0;i<ret.obj.length;++i) {
+				if (id !== ret.obj[i]) {
+					arr.push(ret.obj[i]);
+				}
 			}
 		}
 		that.save({
@@ -931,7 +925,7 @@ PhoneSync.prototype.md5=function(str) {
 	// improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
 	//	input by: Brett Zamir (http://brett-zamir.me)
 	// bugfixed by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
-	//  depends on: utf8_encode
+	//  depends on: utf8Encode
 	//   example 1: md5('Kevin van Zonneveld');
 	//   returns 1: '6e658d4bfcb59cc13f96c14450ac40b9'
 
@@ -1063,7 +1057,7 @@ PhoneSync.prototype.md5=function(str) {
 		S43 = 15,
 		S44 = 21;
 
-	str = this.utf8_encode(str);
+	str = this.utf8Encode(str);
 	x = convertToWordArray(str);
 	a = 0x67452301;
 	b = 0xEFCDAB89;
@@ -1441,8 +1435,9 @@ PhoneSync.prototype.syncUploads=function() {
 		return;
 	}
 	that.get('_syncUploads', function(obj) {
-		if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
-			return; //  that.delaySyncUploads(60000);
+		if (!obj || obj===undefined || obj.keys===undefined || obj.keys.length==0) { // nothing to upload
+			that.delaySyncDownloads();
+			return;
 		}
 		var key=obj.keys[0];
 		that.delayAllowDownloads();
@@ -1484,6 +1479,7 @@ PhoneSync.prototype.syncUploads=function() {
 					that.save(obj, function() { // remove that item from the queue
 						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
+						that.delaySyncDownloads();
 						if (ret) {
 							that.options.onUpload(key, ret);
 						}
@@ -1493,6 +1489,7 @@ PhoneSync.prototype.syncUploads=function() {
 					console.log('upload failed');
 					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads();
+					that.delaySyncDownloads();
 				}
 			);
 		});
@@ -1505,8 +1502,8 @@ PhoneSync.prototype.tablesLastUpdateClear=function() {
 		}
 	}
 };
-PhoneSync.prototype.utf8_encode=function(argString) {
-	//  discuss at: http://phpjs.org/functions/utf8_encode/
+PhoneSync.prototype.utf8Encode=function(argString) {
+	//  discuss at: http://phpjs.org/functions/utf8Encode/
 	// original by: Webtoolkit.info (http://www.webtoolkit.info/)
 	// improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
 	// improved by: sowberry
@@ -1518,7 +1515,7 @@ PhoneSync.prototype.utf8_encode=function(argString) {
 	// bugfixed by: Ulrich
 	// bugfixed by: Rafal Kukawski
 	// bugfixed by: kirilloid
-	//   example 1: utf8_encode('Kevin van Zonneveld');
+	//   example 1: utf8Encode('Kevin van Zonneveld');
 	//   returns 1: 'Kevin van Zonneveld'
 
 	if (null === argString || 'undefined' === typeof argString) {
@@ -1573,5 +1570,12 @@ PhoneSync.prototype.utf8_encode=function(argString) {
 	}
 	return utftext;
 };
+PhoneSync.prototype.utf8Clean=function(str) {
+	return str
+		.replace(/,\\*"[^"]*":\[\]/, '')
+		.replace(/\\*"[^"]*":\[\],/, '')
+		.replace(/[\u2018\u2019]/g, "'")
+		.replace(/[\u201C\u201D]/g, '\\"');
+}
 
 var setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);

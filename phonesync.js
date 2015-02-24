@@ -17,6 +17,7 @@ function PhoneSync(params) {
 		},
 		'syncDownloadsTimeout':60000,
 		'tables':[], // list of tables to be synced
+		'nonIndexableFiles':/^$/, // regexp of files not to be indexed
 		'urls':{},
 		'onBeforeNetwork':function() {
 		},
@@ -88,6 +89,40 @@ function PhoneSync(params) {
 							}
 						});
 						that.options.ready(that);
+						var dirReader=root.createReader();
+						dirReader.readEntries(function(entries) {
+							var files=[];
+							for (var i=0;i<entries.length;++i) {
+								var entry=entries[i];
+								if (entry.isFile) {
+									files.push(entry.name);
+								}
+							}
+							var indexes={};
+							for (var i=0;i<files.length;++i) {
+								if (!/-/.test(files[i])) {
+									continue;
+								}
+								var n=files[i];
+								do {
+									n=n.replace(/-[^\-]*$/, '');
+									indexes[n]=1;
+								} while(/-/.test(n));
+							}
+							for (var i=0;i<files.length;++i) {
+								var name=files[i];
+								if (!/-/.test(name)) {
+									continue;
+								}
+								if (that.options.nonIndexableFiles.test(name)) {
+									continue;
+								}
+								that.idAdd(name.replace(/-[^-]*$/, ''), name.replace(/.*-/, ''));
+							}
+						}, function(err) {
+							console.log('error starting index checker');
+							console.log(err);
+						});
 					}
 				);
 			},
@@ -780,13 +815,12 @@ PhoneSync.prototype.idAdd=function(name, id, callback) {
 		}
 		if ($.inArray(id, ret.obj)===-1) {
 			ret.obj.push(id);
-			setZeroTimeout(function() {
-				that.save({
-					'key':name,
-					'obj':ret.obj,
-					'id':id // added to let recursive idAdd work
-				}, callback , true);
-			});
+			console.log(JSON.stringify(ret.obj));
+			that.save({
+				'key':name,
+				'obj':ret.obj,
+				'id':id // added to let recursive idAdd work
+			}, callback , true);
 		}
 		else {
 			if (callback) {
@@ -801,7 +835,6 @@ PhoneSync.prototype.idDel=function(name, id) {
 	this.get(name, function(ret) {
 		ret=ret||{'obj':[]};
 		var arr=[];
-		console.log(name, ret)
 		if (ret.obj) {
 			for (var i=0;i<ret.obj.length;++i) {
 				if (id !== ret.obj[i]) {

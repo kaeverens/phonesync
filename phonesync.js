@@ -208,8 +208,8 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		json=json
 			.replace(/,\\*"[^"]*":\[\]/, '')
 			.replace(/\\*"[^"]*":\[\],/, '')
-			.replace(/[\u2018\u2019]/g, "'")
-			.replace(/[\u201C\u201D]/g, '"');
+			.replace(/[\u2018\u2019]/g, "\\'")
+			.replace(/[\u201C\u201D]/g, '\\"');
 		params=JSON.parse(json);
 		params._md5=this.md5(json);
 	}

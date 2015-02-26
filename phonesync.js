@@ -336,12 +336,22 @@ PhoneSync.prototype.apiNext=function() {
 			that.delayApiNext(1);
 		});
 };
-PhoneSync.prototype.apiQueueClear=function() {
+PhoneSync.prototype.apiQueueClear=function(type) {
+	if (type===undefined || type=='') {
+		type='syncDownloads';
+	}
 	var that=this;
 	if (that.apiXHR) {
 		that.apiXHR.abort();
 	}
-	that.apiCalls=[];
+	var arr=[];
+	for (var i=0;i<that.apiCalls.length;++i) {
+		if (type=='all' || type==that.apiCalls[i][4]) {
+			continue;
+		}
+		arr.push(that.apiCalls[i]);
+	}
+	that.apiCalls=arr;
 	that.networkInUse=false;
 	that.inSyncDownloads=false;
 }
@@ -1460,7 +1470,7 @@ PhoneSync.prototype.syncUploads=function() {
 		return that.delaySyncUploads(1);
 	}
 	if (that.inSyncDownloads) {
-		that.apiQueueClear();
+		that.apiQueueClear('syncDownloads');
 	}
 	var numberOfUploads=++that.numberOfUploads;
 	if (that.disableFS) {

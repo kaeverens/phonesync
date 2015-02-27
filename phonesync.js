@@ -645,7 +645,6 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 					}
 					that.fileGetQueue=arr;
 					that.cache[key]=obj;
-					console.log(JSON.stringify(obj));
 					callback($.extend({}, obj));
 				},
 				function() {

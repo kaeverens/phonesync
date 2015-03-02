@@ -1289,7 +1289,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 	if (/-/.test(obj.key) && id) {
 		that.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
 			if (callback) {
-				callback();
+				setZeroTimeout(callback);
 			}
 			if (!(nosync || /^_/.test(obj.key))) {
 				that.addToSyncUploads(obj.key);
@@ -1304,7 +1304,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 	}
 	else {
 		if (callback) {
-			callback();
+			setZeroTimeout(callback);
 		}
 		if (!nosync) {
 			that.addToSyncUploads(obj.key);
@@ -1432,7 +1432,7 @@ PhoneSync.prototype.syncDownloads=function() {
 									}, next, true);
 									that.options.onUpdate(k+'-'+obj.id, obj);
 								}
-								else next();
+								else setZeroTimeout(next);
 							}
 							else { // created somewhere else
 								that.save({

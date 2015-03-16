@@ -23,6 +23,9 @@ function PhoneSync(params) {
 		},
 		'onDownload':function() { // called when a new item is downloaded
 		},
+		'onErrorHandler':function(e) { // catchall fail callback
+			console.log(e);
+		},
 		'onNetwork':function() {
 		},
 		'onBeforeSave':function() { // called before an item is saved
@@ -311,11 +314,11 @@ PhoneSync.prototype.apiNext=function() {
 			that.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
-				fail({'err':'error while sending request'});
+				that.errorHandler({'err':'error while sending request'});
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
-				fail(ret);
+				that.options.errorHandler(ret);
 			}
 			else {
 				if (action==='login') {

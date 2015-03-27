@@ -25,6 +25,9 @@ function PhoneSync(params) {
 		},
 		'onErrorHandler':function(e) { // catchall fail callback
 			console.log(e);
+			that.alreadyDoingSyncUpload=0;
+			that.delaySyncUploads();
+			that.delaySyncDownloads();
 		},
 		'onNetwork':function() {
 		},
@@ -314,11 +317,11 @@ PhoneSync.prototype.apiNext=function() {
 			that.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
-				that.errorHandler({'err':'error while sending request'});
+				that.onErrorHandler({'err':'error while sending request'});
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
-				that.options.errorHandler(ret);
+				that.options.onErrorHandler(ret);
 			}
 			else {
 				if (action==='login') {
@@ -1531,9 +1534,6 @@ PhoneSync.prototype.syncUploads=function() {
 				},
 				function(err) { // fail
 					console.log('upload failed');
-					that.alreadyDoingSyncUpload=0;
-					that.delaySyncUploads();
-					that.delaySyncDownloads();
 				}
 			);
 		});

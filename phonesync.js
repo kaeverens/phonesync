@@ -314,7 +314,7 @@ PhoneSync.prototype.apiNext=function() {
 			that.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
-				that.errorHandler({'err':'error while sending request'});
+				that.options.errorHandler({'err':'error while sending request'});
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);

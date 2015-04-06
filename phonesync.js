@@ -228,7 +228,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 				else if (null === obj[prop]) {
 					delete obj[prop];
 				}
-				else if ('' === obj[prop]) {
+				else if (0 && '' === obj[prop]) {
 					delete obj[prop];
 				}
 			}
@@ -631,9 +631,9 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]===key) {
 				//noinspection JSHint
-				return setZeroTimeout(function() {
+				return setTimeout(function() {
 					that.get(key, callback, download);
-				});
+				}, 1);
 			}
 		}
 		that.fileGetQueue.push(key);
@@ -1510,18 +1510,22 @@ PhoneSync.prototype.syncUploads=function() {
 				that.networkInUse=false;
 				that.apiXHR.abort();
 			}
+			window.syncUploadsClearTimeout=setTimeout(function() {
+				that.alreadyDoingSyncUpload=0;
+			}, 60000);
 			that.api(
 				'syncUploads', ret,
 				function(ret) { //  success
+					clearTimeout(window.syncUploadsClearTimeout);
 					if (obj.keys[0]!==key) {
 						console.warn('DUPLICATE UPLOADED?? '+key);
-						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
+						that.alreadyDoingSyncUpload=0;
 						return;
 					}
+					that.alreadyDoingSyncUpload=0;
 					obj.keys.shift();
 					that.save(obj, function() { // remove that item from the queue
-						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
 						that.delaySyncDownloads();
 						if (ret) {
@@ -1530,6 +1534,7 @@ PhoneSync.prototype.syncUploads=function() {
 					}, true);
 				},
 				function(err) { // fail
+					window.syncUploadsClearTimeout;
 					console.log('upload failed');
 					that.alreadyDoingSyncUpload=0;
 					that.delaySyncUploads();

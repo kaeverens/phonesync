@@ -115,6 +115,7 @@ function PhoneSync(params) {
 									indexes[n]=1;
 								} while(/-/.test(n));
 							}
+							/*
 							for (var i=0;i<files.length;++i) {
 								var name=files[i];
 								if (!/-/.test(name)) {
@@ -125,6 +126,7 @@ function PhoneSync(params) {
 								}
 								that.idAdd(name.replace(/-[^-]*$/, ''), name.replace(/.*-/, ''));
 							}
+							*/
 						}, function(err) {
 							console.log('error starting index checker');
 							console.log(err);
@@ -231,7 +233,7 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 				else if (null === obj[prop]) {
 					delete obj[prop];
 				}
-				else if ('' === obj[prop]) {
+				else if (0 && '' === obj[prop]) {
 					delete obj[prop];
 				}
 			}
@@ -317,7 +319,7 @@ PhoneSync.prototype.apiNext=function() {
 			that.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
-				that.onErrorHandler({'err':'error while sending request'});
+				that.options.errorHandler({'err':'error while sending request'});
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
@@ -634,9 +636,9 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]===key) {
 				//noinspection JSHint
-				return setZeroTimeout(function() {
+				return setTimeout(function() {
 					that.get(key, callback, download);
-				});
+				}, 1);
 			}
 		}
 		that.fileGetQueue.push(key);
@@ -1430,8 +1432,13 @@ PhoneSync.prototype.syncDownloads=function() {
 							if (ret===null) {
 								that.options.onDownload(k+'-'+obj.id, obj);
 							}
+							if (obj.uuid===undefined) {
+								console.warn(k+'-'+obj.id, 'has no UUID set');
+							}
 							if (that.uuid==obj.uuid) { // originally came from device
+								console.log(k+'-'+obj.id, 'originally came from this device');
 								if (ret===null) {
+									console.log('but it\'s missing from the database so let\'s save it anyway');
 									that.save({
 										'key':k+'-'+obj.id,
 										'obj':obj
@@ -1513,18 +1520,22 @@ PhoneSync.prototype.syncUploads=function() {
 				that.networkInUse=false;
 				that.apiXHR.abort();
 			}
+			window.syncUploadsClearTimeout=setTimeout(function() {
+				that.alreadyDoingSyncUpload=0;
+			}, 60000);
 			that.api(
 				'syncUploads', ret,
 				function(ret) { //  success
+					clearTimeout(window.syncUploadsClearTimeout);
 					if (obj.keys[0]!==key) {
 						console.warn('DUPLICATE UPLOADED?? '+key);
-						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
+						that.alreadyDoingSyncUpload=0;
 						return;
 					}
+					that.alreadyDoingSyncUpload=0;
 					obj.keys.shift();
 					that.save(obj, function() { // remove that item from the queue
-						that.alreadyDoingSyncUpload=0;
 						that.delaySyncUploads(1);
 						that.delaySyncDownloads();
 						if (ret) {
@@ -1533,7 +1544,11 @@ PhoneSync.prototype.syncUploads=function() {
 					}, true);
 				},
 				function(err) { // fail
+					window.syncUploadsClearTimeout;
 					console.log('upload failed');
+					that.alreadyDoingSyncUpload=0;
+					that.delaySyncUploads();
+					that.delaySyncDownloads();
 				}
 			);
 		});

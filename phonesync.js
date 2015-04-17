@@ -112,6 +112,7 @@ function PhoneSync(params) {
 									indexes[n]=1;
 								} while(/-/.test(n));
 							}
+							/*
 							for (var i=0;i<files.length;++i) {
 								var name=files[i];
 								if (!/-/.test(name)) {
@@ -122,6 +123,7 @@ function PhoneSync(params) {
 								}
 								that.idAdd(name.replace(/-[^-]*$/, ''), name.replace(/.*-/, ''));
 							}
+							*/
 						}, function(err) {
 							console.log('error starting index checker');
 							console.log(err);
@@ -1427,8 +1429,13 @@ PhoneSync.prototype.syncDownloads=function() {
 							if (ret===null) {
 								that.options.onDownload(k+'-'+obj.id, obj);
 							}
+							if (obj.uuid===undefined) {
+								console.warn(k+'-'+obj.id, 'has no UUID set');
+							}
 							if (that.uuid==obj.uuid) { // originally came from device
+								console.log(k+'-'+obj.id, 'originally came from this device');
 								if (ret===null) {
+									console.log('but it\'s missing from the database so let\'s save it anyway');
 									that.save({
 										'key':k+'-'+obj.id,
 										'obj':obj

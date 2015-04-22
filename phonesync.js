@@ -295,7 +295,6 @@ PhoneSync.prototype.apiNext=function() {
 		if (that.apiCalls[i][4]==='login' || that.apiCalls[i][4]==='logout') {
 			call=that.apiCalls[i];
 			that.apiCalls.splice(i, 1);
-			//noinspection BreakStatementJS
 		 break;
 		}
 	}
@@ -305,7 +304,6 @@ PhoneSync.prototype.apiNext=function() {
 			if ('syncUploads' === this.apiCalls[i][4]) {
 				call=this.apiCalls[i];
 				this.apiCalls.splice(i, 1);
-				//noinspection BreakStatementJS
 			 break;
 			}
 		}
@@ -547,7 +545,6 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 			var f=that.filePutQueue[i];
 			if (f[0]===name) {
 				that.filePutQueue.splice(i, 1);
-				//noinspection BreakStatementJS
 			 break;
 			}
 		}
@@ -635,7 +632,6 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 		}
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]===key) {
-				//noinspection JSHint
 				return setTimeout(function() {
 					that.get(key, callback, download);
 				}, 1);
@@ -876,7 +872,6 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 			var f=that.filePutQueue[i];
 			if (f[0]===name) {
 				that.filePutQueue.splice(i, 1);
-				//noinspection BreakStatementJS
 			 break;
 			}
 		}
@@ -981,53 +976,37 @@ PhoneSync.prototype.md5=function(str) {
 	var xl;
 
 	var rotateLeft = function (lValue, iShiftBits) {
-		//noinspection JSHint
 		return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits));
 	};
 
 	var addUnsigned = function (lX, lY) {
 		var lX4, lY4, lX8, lY8, lResult;
-		//noinspection JSHint
 		lX8 = (lX & 0x80000000);
-		//noinspection JSHint
 		lY8 = (lY & 0x80000000);
-		//noinspection JSHint
 		lX4 = (lX & 0x40000000);
-		//noinspection JSHint
 		lY4 = (lY & 0x40000000);
-		//noinspection JSHint
 		lResult = (lX & 0x3FFFFFFF) + (lY & 0x3FFFFFFF);
-		//noinspection JSHint
 	 if (lX4 & lY4) {
-			//noinspection JSHint
 		 return (lResult ^ 0x80000000 ^ lX8 ^ lY8);
 		}
-		//noinspection JSHint
 	 if (lX4 | lY4) {
-			//noinspection JSHint
 		 if (lResult & 0x40000000) {
-				//noinspection JSHint
 			 return (lResult ^ 0xC0000000 ^ lX8 ^ lY8);
 			} else {
-				//noinspection JSHint
 			 return (lResult ^ 0x40000000 ^ lX8 ^ lY8);
 			}
 		} else {
-			//noinspection JSHint
 		 return (lResult ^ lX8 ^ lY8);
 		}
 	};
 
 	var _F = function (x, y, z) {
-		//noinspection JSHint
 	 return (x & y) | ((~x) & z);
 	};
 	var _G = function (x, y, z) {
-		//noinspection JSHint
 	 return (x & z) | (y & (~z));
 	};
 	var _H = function (x, y, z) {
-		//noinspection JSHint
 	 return (x ^ y ^ z);
 	};
 	var _I = function (x, y, z) {

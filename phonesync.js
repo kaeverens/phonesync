@@ -49,7 +49,6 @@ function PhoneSync(params) {
 	this.disableFS=false;
 	this.filePutQueue=[];
 	this.fileGetQueue=[];
-	this.fileGetJSONQueue=[];
 	this.networkInUse=false;
 	this.loggedIn=false;
 	this.tables={};
@@ -129,7 +128,8 @@ function PhoneSync(params) {
 							}
 							*/
 						}, function(err) {
-							console.log('error starting index checker', err);
+							console.log('error starting index checker');
+							console.log(err);
 						});
 					}
 				);
@@ -165,10 +165,9 @@ function PhoneSync(params) {
 		that.delaySyncDownloads();
 	}, 60000);
 }
-PhoneSync.prototype.addToSyncUploads=function(key) { console.log('PhoneSync.prototype.addToSyncUploads');
+PhoneSync.prototype.addToSyncUploads=function(key) {
 	var that=this;
 	this.get('_syncUploads', function(ret) {
-		console.log('syncDownloads retrieved');
 		if (!ret || ret===undefined || ret.keys===undefined) {
 			ret={
 				'key':'_syncUploads',
@@ -183,7 +182,7 @@ PhoneSync.prototype.addToSyncUploads=function(key) { console.log('PhoneSync.prot
 	});
 	that.delaySyncUploads();
 };
-PhoneSync.prototype.api=function(action, params, success, fail) { console.log('PhoneSync.prototype.api');
+PhoneSync.prototype.api=function(action, params, success, fail) {
 	var uid=0;
 	if (window.credentials) {
 		if (credentials.email && credentials.password) {
@@ -263,14 +262,14 @@ PhoneSync.prototype.api=function(action, params, success, fail) { console.log('P
 	this.apiCalls.push([url, params, success, fail, action]);
 	this.apiNext();
 };
-PhoneSync.prototype.apiAlreadyInQueue=function(name) { console.log('PhoneSync.prototype.apiAlreadyInQueue');
+PhoneSync.prototype.apiAlreadyInQueue=function(name) {
 	for (var i=0;i<this.apiCalls.length;++i) {
 		if (this.apiCalls[i][4]===name) {
 			return true;
 		}
 	}
 };
-PhoneSync.prototype.apiNext=function() { console.log('PhoneSync.prototype.apiNext');
+PhoneSync.prototype.apiNext=function() {
 	var that=this;
 	if (navigator.connection.type===Connection.NONE) {
 		return that.delayApiNext(5000);
@@ -296,6 +295,7 @@ PhoneSync.prototype.apiNext=function() { console.log('PhoneSync.prototype.apiNex
 		if (that.apiCalls[i][4]==='login' || that.apiCalls[i][4]==='logout') {
 			call=that.apiCalls[i];
 			that.apiCalls.splice(i, 1);
+			//noinspection BreakStatementJS
 		 break;
 		}
 	}
@@ -305,6 +305,7 @@ PhoneSync.prototype.apiNext=function() { console.log('PhoneSync.prototype.apiNex
 			if ('syncUploads' === this.apiCalls[i][4]) {
 				call=this.apiCalls[i];
 				this.apiCalls.splice(i, 1);
+				//noinspection BreakStatementJS
 			 break;
 			}
 		}
@@ -315,7 +316,6 @@ PhoneSync.prototype.apiNext=function() { console.log('PhoneSync.prototype.apiNex
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
 	that.apiXHR=$.post(url, params)
 		.done(function(ret) {
-			console.log('XHR retrieved');
 			that.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
@@ -335,18 +335,16 @@ PhoneSync.prototype.apiNext=function() { console.log('PhoneSync.prototype.apiNex
 			}
 		})
 		.fail(function(ret) {
-			console.error('XHR failed');
 			that.apiCalls.push(call);
 			fail();
 		})
 		.always(function() {
-			console.log('XHR finished');
 			that.networkInUse=false;
 			window.clearTimeout(window.PhoneSync_timersClearNetwork);
 			that.delayApiNext(1);
 		});
 };
-PhoneSync.prototype.apiQueueClear=function(type) { console.log('PhoneSync.prototype.apiQueueClear');
+PhoneSync.prototype.apiQueueClear=function(type) {
 	if (type===undefined || type=='') {
 		type='syncDownloads';
 	}
@@ -365,7 +363,7 @@ PhoneSync.prototype.apiQueueClear=function(type) { console.log('PhoneSync.protot
 	that.networkInUse=false;
 	that.inSyncDownloads=false;
 }
-PhoneSync.prototype.dbSetupIndexedDB=function() { console.log('PhoneSync.prototype.dbSetupIndexedDB');
+PhoneSync.prototype.dbSetupIndexedDB=function() {
 	var that=this, dbreq=window.indexedDB.open(that.options.dbName, 3);
 	dbreq.onsuccess=function(ev) {
 		that.fs=ev.target.result;
@@ -395,14 +393,12 @@ PhoneSync.prototype.dbSetupIndexedDB=function() { console.log('PhoneSync.prototy
 		}
 	}
 }
-PhoneSync.prototype.delayAllowDownloads=function() { console.log('PhoneSync.prototype.delayAllowDownloads');
+PhoneSync.prototype.delayAllowDownloads=function() {
 	var that=this;
 	that.allowDownloads=false;
 	window.clearTimeout(window.PhoneSync_timerAllowDownloads);
 	window.PhoneSync_timerAllowDownloads=window.setTimeout(function() {
-		console.log('in timerAllowDownloads');
 		that.get('_syncUploads', function(obj) {
-			console.log('syncUploads retrieved');
 			if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
 				that.allowDownloads=true;
 			}
@@ -412,50 +408,43 @@ PhoneSync.prototype.delayAllowDownloads=function() { console.log('PhoneSync.prot
 		});
 	}, that.options.timeout);
 }
-PhoneSync.prototype.delayApiNext=function(delay) { console.log('PhoneSync.prototype.delayApiNext');
+PhoneSync.prototype.delayApiNext=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerApiCall);
 	window.PhoneSync_timerApiCall=window.setTimeout(function() {
-		console.log('timerApiCall called');
 		that.apiNext();
 	}, delay||1000);
 };
-PhoneSync.prototype.delayFilePutJSON=function(delay) { console.log('PhoneSync.prototype.delayFilePutJSON');
+PhoneSync.prototype.delayFilePutJSON=function(delay) {
 	var that=this;
-	var ms=delay||that.options.timeout;
 	window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-	console.log('setting timeout for filePutJSON');
 	window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-		console.log('timeout succeeded');
 		that.filePutJSON();
-	}, ms);
+	}, delay||that.options.timeout);
 };
-PhoneSync.prototype.delayIdxPutJSON=function(delay) { console.log('PhoneSync.prototype.delayIdxPutJSON');
+PhoneSync.prototype.delayIdxPutJSON=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerIdxPutQueue);
 	window.PhoneSync_timerIdxPutQueue=window.setTimeout(function() {
-		console.log('about to call idxPutJSON');
 		that.idxPutJSON();
 	}, delay||that.options.timeout);
 };
-PhoneSync.prototype.delaySyncDownloads=function(delay) { console.log('PhoneSync.prototype.delaySyncDownloads');
+PhoneSync.prototype.delaySyncDownloads=function(delay) {
 	var that=this;
 	delay=delay||that.options.timeout;
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
 	window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-		console.log('about to call syncDownloads');
 		that.syncDownloads();
 	}, delay);
 }
-PhoneSync.prototype.delaySyncUploads=function(delay) { console.log('PhoneSync.prototype.delaySyncUploads');
+PhoneSync.prototype.delaySyncUploads=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerSyncUploads);
 	window.PhoneSync_timerSyncUploads=setTimeout(function() {
-		console.log('syncUploads');
 		that.syncUploads();
 	}, delay||that.options.timeout);
 };
-PhoneSync.prototype.delete=function(key, callback) { console.log('PhoneSync.prototype.delete');
+PhoneSync.prototype.delete=function(key, callback) {
 	var that=this;
 	if (this.disableFS) {
 		return;
@@ -473,9 +462,7 @@ PhoneSync.prototype.delete=function(key, callback) { console.log('PhoneSync.prot
 			var store=txn.objectStore(that.options.dbName);
 			store.delete(key);
 			store.onsuccess=function(ev) {
-				console.log('store succeeded');
 				that.get('_files', function(ret) {
-					console.log('_files retrieved');
 					if (ret===null) {
 						return;
 					}
@@ -492,10 +479,8 @@ PhoneSync.prototype.delete=function(key, callback) { console.log('PhoneSync.prot
 	}
 	else if ('files' === that.options.dbType) {
 		that.fs.getFile(key, {create: false, exclusive: false}, function(file) {
-			console.log('file retrieved');
 			file.remove();
 			that.get('_files', function(ret) {
-				console.log('_files retrieved (2)');
 				if (ret===null) {
 					return;
 				}
@@ -508,7 +493,6 @@ PhoneSync.prototype.delete=function(key, callback) { console.log('PhoneSync.prot
 	}
 	else {
 		that.get('_files', function(ret) {
-		console.log('_files retrieved (3)');
 			if (ret===null) {
 				return;
 			}
@@ -520,60 +504,22 @@ PhoneSync.prototype.delete=function(key, callback) { console.log('PhoneSync.prot
 	}
 	this.options.onDelete(key);
 };
-PhoneSync.prototype.fileGetJSONAddToQueue(name, success, fail) {
-	var that=this;
-	that.fileGetJSONQueue.push([name, success, fail]);
-	if (that.fileGetQueueRunning) {
-		return;
-	}
-	that.fileGetQueueRunning=1;
-	setZeroTimeout(function() {
-		that.fileGetQueueNext();
-	});
-}
-PhoneSync.prototype.fileGetQueueNext=function() {
-	if (!that.fileGetJSONQueue.length) {
-		that.fileGetQueueRunning=false;
-		return;
-	}
-	var file=that.fileGetJSONQueue.shift();
-	that.fileGetJSON(
-		file[0],
-		function(obj) {
-			file[1](obj);
-			setZeroTimeout(function() {
-				that.fileGetQueueNext();
-			});
-		},
-		function(obj) {
-			file[2](obj);
-			setZeroTimeout(function() {
-				that.fileGetQueueNext();
-			});
-		}
-	);
-}
-PhoneSync.prototype.fileGetJSON=function(name, success, fail) { console.log('PhoneSync.prototype.fileGetJSON');
+PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	var that=this;
 	if (this.disableFS) {
-		return fail();
+		return;
 	}
 	if (!this.fs) {
 		return window.setTimeout(function() {
-			console.log('calling fileGetJSON');
 			that.fileGetJSON(name, success, fail);
 		}, that.options.timeout);
 	}
 	this.fs.getFile(this.sanitise(name), {'create':false, 'exclusive':false},
 		function(entry) {
-			console.log('handle created', name);
 			entry.file(
 				function(file) {
-					console.log('file loaded', name);
 					var reader=new FileReader();
-					console.log('reader created');
 					reader.onloadend=function(evt) {
-						console.log('file read', evt);
 						if (evt.target.result) {
 							var res=that.utf8Clean(evt.target.result);
 							success(JSON.parse(res));
@@ -582,11 +528,6 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) { console.log('Pho
 							fail();
 						}
 					};
-					reader.onerror=function(err) {
-						console.log('error?');
-						console.error('error in FileReader', err);
-					}
-					console.log('calling readAsText', JSON.stringify(file));
 					reader.readAsText(file);
 				},
 				fail
@@ -595,7 +536,7 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) { console.log('Pho
 		fail
 	);
 };
-PhoneSync.prototype.filePutJSON=function(name, obj, callback) { console.log('PhoneSync.prototype.filePutJSON');
+PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var that=this;
 	if (that.disableFS || 'none'===that.options.dbType) {
 		return callback?callback():0;
@@ -606,43 +547,36 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) { console.log('Pho
 			var f=that.filePutQueue[i];
 			if (f[0]===name) {
 				that.filePutQueue.splice(i, 1);
+				//noinspection BreakStatementJS
 			 break;
 			}
 		}
 		that.filePutQueue.push([name, obj, callback]);
-		return that.delayFilePutJSON(100);
+		return that.delayFilePutJSON(1);
 	}
 	// }
 	// { if a file is currently being written, then come back later
-	console.log(1, that.filePutJSONLock);
 	if (that.filePutJSONLock) {
 		return that.delayFilePutJSON(1);
 	}
 	// }
 	// { write a file
 	that.filePutJSONLock=true;
-	console.log(2, that.filePutJSONLock);
 	var o=that.filePutQueue.shift();
-	console.log(o);
 	if (o) {
 		name=o[0];
 		obj=o[1];
 		callback=o[2];
 		var json=JSON.stringify(obj);
-		console.log('creating file', name);
 		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
-				console.log('file created', name);
-				entry.createWriter(
-					function(writer) {
-						console.log('file writer created');
+				entry.createWriter(function(writer) {
 						writer.onwriteend=function() {
 							if (callback) {
 								callback();
 							}
 							if (name!=='_files') {
 								that.get('_files', function(ret) {
-									console.log('_files retrieved');
 									if (ret===null) {
 										ret={
 											'key':'_files',
@@ -655,63 +589,36 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) { console.log('Pho
 									}
 								});
 							}
-							console.log('finished writing file', name);
 							that.filePutJSONLock=false;
-	console.log(3, that.filePutJSONLock);
 							if (that.filePutQueue.length) {
-								console.log('about to call that.delayFilePutJSON');
 								that.delayFilePutJSON(1);
 							}
-							else {
-								console.log('no more files to write');
-							}
 						};
-						writer.onerror=function() {
-							console.log('failed to write file', name, err);
-							that.filePutJSONLock=false;
-	console.log(4, that.filePutJSONLock);
-							that.filePutQueue.unshift(o);
-							that.delayFilePutJSON(1);
-						}
 						writer.write(json);
 					},
 					function(err) { // failed to create writer
-						that.filePutJSONLock=false;
-	console.log(5, that.filePutJSONLock);
-						console.error('failed to create writer', err);
+						console.log('ERROR', 'failed to create writer', err);
 						that.filePutQueue.unshift(o);
-						that.delayFilePutJSON(1);
+						that.delayFilePutJSON();
 					});
-			},
-			function(err) { // failed to get file handle
-				that.filePutJSONLock=false;
-	console.log(6, that.filePutJSONLock);
-				console.error('failed to create file handle', name, err);
-				that.filePutQueue.unshift(o);
-				that.delayFilePutJSON(1);
 			}
 		);
 	}
 	else {
-		console.log('file is not an object');
-		that.filePutJSONLock=false;
-	console.log(7, that.filePutJSONLock);
 		if (that.filePutQueue.length) {
 			that.delayFilePutJSON(1);
 		}
 	}
 	// }
 };
-PhoneSync.prototype.get=function(key, callback, download, failcallback) { console.log('PhoneSync.prototype.get');
+PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 	if (!callback) {
 		callback=function() {};
 	}
 	function doTheGet(rekeys) {
-		console.log(1);
 		if (!(undefined===rekeys || null === rekeys) && rekeys.changes && rekeys.changes[key]) {
 			key=rekeys.changes[key];
 		}
-		console.log(2);
 		if (that.cache._files) {
 			if (that.cache._files.files[key]===undefined && (undefined===download || !download)) {
 				if ('_rekeys' === key) {
@@ -726,23 +633,17 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) { consol
 				return fail();
 			}
 		}
-		console.log(3);
 		for (var i=0;i<that.fileGetQueue.length;++i) {
 			if (that.fileGetQueue[i]===key) {
-				console.log('already in list - calling again');
-				var fn=function() {
-					console.log('calling get again');
-					that.get(key, callback, download, failcallback);
-				};
-				console.log('setting timeout');
-				return setTimeout(fn, 10);
+				//noinspection JSHint
+				return setTimeout(function() {
+					that.get(key, callback, download);
+				}, 1);
 			}
 		}
-		console.log(4);
 		that.fileGetQueue.push(key);
-		console.log(5);
 		if (that.options.dbType=='file') {
-			that.fileGetJSONAddToQueue(key,
+			that.fileGetJSON(key,
 				function(obj) {
 					var arr=[];
 					for (var i=0;i<that.fileGetQueue.length;++i) {
@@ -848,11 +749,9 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) { consol
 		}
 	}
 	if ('_rekeys' === key) {
-		console.log('rekeys');
 		doTheGet(null);
 	}
 	else {
-		console.log('get rekeys, etc');
 		that.get('_rekeys', doTheGet, false, function() {
 			obj={
 				'key':'_rekeys',
@@ -862,7 +761,7 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) { consol
 		});
 	}
 };
-PhoneSync.prototype.getAll=function(key, callback) { console.log('PhoneSync.prototype.getAll');
+PhoneSync.prototype.getAll=function(key, callback) {
 	var that=this;
 	if (this.disableFS) {
 		return;
@@ -893,7 +792,7 @@ PhoneSync.prototype.getAll=function(key, callback) { console.log('PhoneSync.prot
 		this.get(key+'-'+keys[i], getObject);
 	}
 };
-PhoneSync.prototype.getAllById=function(keys, callback) { console.log('PhoneSync.prototype.getAllById');
+PhoneSync.prototype.getAllById=function(keys, callback) {
 	if (this.disableFS) {
 		return;
 	}
@@ -912,7 +811,7 @@ PhoneSync.prototype.getAllById=function(keys, callback) { console.log('PhoneSync
 		this.get(keys[i], getObject);
 	}
 };
-PhoneSync.prototype.getSome=function(keys, callback) { console.log('PhoneSync.prototype.getSome');
+PhoneSync.prototype.getSome=function(keys, callback) {
 	var toGet=keys.length, vals=[];
 	for (var i=0;i<keys.length;++i) {
 		lch.get(keys[i], function(ret) {
@@ -924,7 +823,7 @@ PhoneSync.prototype.getSome=function(keys, callback) { console.log('PhoneSync.pr
 		});
 	}
 }
-PhoneSync.prototype.idAdd=function(name, id, callback) { console.log('PhoneSync.prototype.idAdd');
+PhoneSync.prototype.idAdd=function(name, id, callback) {
 	var that=this;
 	id=''+id;
 	this.get(name, function(ret) {
@@ -946,7 +845,7 @@ PhoneSync.prototype.idAdd=function(name, id, callback) { console.log('PhoneSync.
 		}
 	});
 };
-PhoneSync.prototype.idDel=function(name, id) { console.log('PhoneSync.prototype.idDel');
+PhoneSync.prototype.idDel=function(name, id) {
 	var that=this;
 	id=''+id;
 	this.get(name, function(ret) {
@@ -966,7 +865,7 @@ PhoneSync.prototype.idDel=function(name, id) { console.log('PhoneSync.prototype.
 		}, false, true);
 	});
 };
-PhoneSync.prototype.idxPutJSON=function(name, obj, callback) { console.log('PhoneSync.prototype.idxPutJSON');
+PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 	var that=this;
 	if (that.disableFS || 'none'===that.options.dbType) {
 		return callback?callback():0;
@@ -977,6 +876,7 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) { console.log('Phon
 			var f=that.filePutQueue[i];
 			if (f[0]===name) {
 				that.filePutQueue.splice(i, 1);
+				//noinspection BreakStatementJS
 			 break;
 			}
 		}
@@ -1038,7 +938,7 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) { console.log('Phon
 	}
 	// }
 };
-PhoneSync.prototype.idxGetJSON=function(name, success, fail) { console.log('PhoneSync.prototype.idxGetJSON');
+PhoneSync.prototype.idxGetJSON=function(name, success, fail) {
 	var that=this;
 	if (this.disableFS) {
 		return;
@@ -1066,7 +966,7 @@ PhoneSync.prototype.idxGetJSON=function(name, success, fail) { console.log('Phon
 		console.log('could not open indexeddb transaction');
 	}
 };
-PhoneSync.prototype.md5=function(str) { console.log('PhoneSync.prototype.md5');
+PhoneSync.prototype.md5=function(str) {
 	//  discuss at: http://phpjs.org/functions/md5/
 	// original by: Webtoolkit.info (http://www.webtoolkit.info/)
 	// improved by: Michael White (http://getsprink.com)
@@ -1081,37 +981,53 @@ PhoneSync.prototype.md5=function(str) { console.log('PhoneSync.prototype.md5');
 	var xl;
 
 	var rotateLeft = function (lValue, iShiftBits) {
+		//noinspection JSHint
 		return (lValue << iShiftBits) | (lValue >>> (32 - iShiftBits));
 	};
 
 	var addUnsigned = function (lX, lY) {
 		var lX4, lY4, lX8, lY8, lResult;
+		//noinspection JSHint
 		lX8 = (lX & 0x80000000);
+		//noinspection JSHint
 		lY8 = (lY & 0x80000000);
+		//noinspection JSHint
 		lX4 = (lX & 0x40000000);
+		//noinspection JSHint
 		lY4 = (lY & 0x40000000);
+		//noinspection JSHint
 		lResult = (lX & 0x3FFFFFFF) + (lY & 0x3FFFFFFF);
+		//noinspection JSHint
 	 if (lX4 & lY4) {
+			//noinspection JSHint
 		 return (lResult ^ 0x80000000 ^ lX8 ^ lY8);
 		}
+		//noinspection JSHint
 	 if (lX4 | lY4) {
+			//noinspection JSHint
 		 if (lResult & 0x40000000) {
+				//noinspection JSHint
 			 return (lResult ^ 0xC0000000 ^ lX8 ^ lY8);
 			} else {
+				//noinspection JSHint
 			 return (lResult ^ 0x40000000 ^ lX8 ^ lY8);
 			}
 		} else {
+			//noinspection JSHint
 		 return (lResult ^ lX8 ^ lY8);
 		}
 	};
 
 	var _F = function (x, y, z) {
+		//noinspection JSHint
 	 return (x & y) | ((~x) & z);
 	};
 	var _G = function (x, y, z) {
+		//noinspection JSHint
 	 return (x & z) | (y & (~z));
 	};
 	var _H = function (x, y, z) {
+		//noinspection JSHint
 	 return (x ^ y ^ z);
 	};
 	var _I = function (x, y, z) {
@@ -1277,7 +1193,7 @@ PhoneSync.prototype.md5=function(str) { console.log('PhoneSync.prototype.md5');
 
 	return temp.toLowerCase();
 };
-PhoneSync.prototype.nuke=function(callback) { console.log('PhoneSync.prototype.nuke');
+PhoneSync.prototype.nuke=function(callback) {
 	var that=this;
 	if (that.options.dbType=='file') {
 		that.disableFS=true;
@@ -1342,7 +1258,7 @@ PhoneSync.prototype.nuke=function(callback) { console.log('PhoneSync.prototype.n
 	that.alreadyDoingSyncUpload=0;
 	that.cache={};
 };
-PhoneSync.prototype.rekey=function(table, oldId, newId, callback) { console.log('PhoneSync.prototype.rekey');
+PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	var that=this;
 	if (oldId==newId) {
 		return;
@@ -1364,10 +1280,10 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) { console.log(
 		that.delete(table+'-'+oldId);
 	});
 };
-PhoneSync.prototype.sanitise=function(name) { console.log('PhoneSync.prototype.sanitise');
+PhoneSync.prototype.sanitise=function(name) {
 	return name.replace(/[^a-zA-Z0-9\-]/g, '');
 };
-PhoneSync.prototype.save=function(obj, callback, nosync) { console.log('PhoneSync.prototype.save');
+PhoneSync.prototype.save=function(obj, callback, nosync) {
 	var that=this;
 	that.options.onBeforeSave(obj.key, obj);
 	function onSave() {
@@ -1409,7 +1325,7 @@ PhoneSync.prototype.save=function(obj, callback, nosync) { console.log('PhoneSyn
 		}
 	}
 };
-PhoneSync.prototype.syncDownloads=function() { console.log('PhoneSync.prototype.syncDownloads');
+PhoneSync.prototype.syncDownloads=function() {
 	var that=this;
 	if (!that.allowDownloads || !window.credentials || that.inSyncDownloads) {
 		return that.delaySyncDownloads();
@@ -1554,7 +1470,7 @@ PhoneSync.prototype.syncDownloads=function() { console.log('PhoneSync.prototype.
 		}
 	);
 };
-PhoneSync.prototype.syncUploads=function() { console.log('PhoneSync.prototype.syncUploads');
+PhoneSync.prototype.syncUploads=function() {
 	var that=this;
 	if (!that.loggedIn || !window.credentials) {
 		return that.delaySyncUploads(5000);
@@ -1638,14 +1554,14 @@ PhoneSync.prototype.syncUploads=function() { console.log('PhoneSync.prototype.sy
 		});
 	});
 };
-PhoneSync.prototype.tablesLastUpdateClear=function() { console.log('PhoneSync.prototype.tablesLastUpdateClear');
+PhoneSync.prototype.tablesLastUpdateClear=function() {
 	for (var i=0;i<this.options.tables.length;++i) {
 		this.tables[this.options.tables[i]]={
 			'lastUpdate':'0000-00-00 00:00:00'
 		}
 	}
 };
-PhoneSync.prototype.utf8Encode=function(argString) { console.log('PhoneSync.prototype.utf8Encode');
+PhoneSync.prototype.utf8Encode=function(argString) {
 	//  discuss at: http://phpjs.org/functions/utf8Encode/
 	// original by: Webtoolkit.info (http://www.webtoolkit.info/)
 	// improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
@@ -1713,7 +1629,7 @@ PhoneSync.prototype.utf8Encode=function(argString) { console.log('PhoneSync.prot
 	}
 	return utftext;
 };
-PhoneSync.prototype.utf8Clean=function(str) { console.log('PhoneSync.prototype.utf8Clean');
+PhoneSync.prototype.utf8Clean=function(str) {
 	return str
 		.replace(/,\\*"[^"]*":\[\]/, '')
 		.replace(/\\*"[^"]*":\[\],/, '')

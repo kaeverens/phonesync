@@ -418,9 +418,12 @@ PhoneSync.prototype.delayApiNext=function(delay) {
 PhoneSync.prototype.delayFilePutJSON=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerFilePutQueue);
+	var timeout=delay||that.options.timeout;
+	console.log(timeout);
 	window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
+		console.log('setTimeout completed');
 		that.filePutJSON();
-	}, delay||that.options.timeout);
+	}, timeout);
 };
 PhoneSync.prototype.delayIdxPutJSON=function(delay) {
 	var that=this;
@@ -505,6 +508,7 @@ PhoneSync.prototype.delete=function(key, callback) {
 	this.options.onDelete(key);
 };
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
+	console.log('read', name);
 	var that=this;
 	if (this.disableFS) {
 		return;
@@ -565,12 +569,14 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var o=that.filePutQueue.shift();
 	if (o) {
 		name=o[0];
+							console.log('writelock', name, that.filePutQueue.length);
 		obj=o[1];
 		callback=o[2];
 		var json=JSON.stringify(obj);
 		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
-				entry.createWriter(function(writer) {
+				entry.createWriter(
+					function(writer) {
 						writer.onwriteend=function() {
 							if (callback) {
 								callback();
@@ -590,6 +596,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 								});
 							}
 							that.filePutJSONLock=false;
+							console.log('writeunlock', name, that.filePutQueue.length);
 							if (that.filePutQueue.length) {
 								that.delayFilePutJSON(1);
 							}
@@ -598,13 +605,18 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 					},
 					function(err) { // failed to create writer
 						console.log('ERROR', 'failed to create writer', err);
+						that.filePutJSONLock=false;
+						console.log('writeunlock', name);
 						that.filePutQueue.unshift(o);
 						that.delayFilePutJSON();
-					});
+					}
+				);
 			}
 		);
 	}
 	else {
+		that.filePutJSONLock=false;
+		console.log('writeunlock', 'no name');
 		if (that.filePutQueue.length) {
 			that.delayFilePutJSON(1);
 		}

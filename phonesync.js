@@ -8,7 +8,6 @@ function PhoneSync(params) {
 		'dbName':'tmp',
 		'dbType':params.dbType
 			|| (/http/.test(document.location.toString())?'indexeddb':'file'),
-		'md5':false, // send MD5 checks
 		'timeout':1000, // milliseconds
 		'version':0, // version parameter to send to server as _v
 		'updatesUrl':'', // URL of the API
@@ -25,9 +24,6 @@ function PhoneSync(params) {
 		},
 		'onErrorHandler':function(e) { // catchall fail callback
 			console.log(e);
-			that.alreadyDoingSyncUpload=0;
-			that.delaySyncUploads();
-			that.delaySyncDownloads();
 		},
 		'onNetwork':function() {
 		},
@@ -115,7 +111,6 @@ function PhoneSync(params) {
 									indexes[n]=1;
 								} while(/-/.test(n));
 							}
-							/*
 							for (var i=0;i<files.length;++i) {
 								var name=files[i];
 								if (!/-/.test(name)) {
@@ -126,7 +121,6 @@ function PhoneSync(params) {
 								}
 								that.idAdd(name.replace(/-[^-]*$/, ''), name.replace(/.*-/, ''));
 							}
-							*/
 						}, function(err) {
 							console.log('error starting index checker');
 							console.log(err);
@@ -240,20 +234,6 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 		}
 	}
 	recursiveClean(params);
-	if (this.options.md5) {
-		var json=JSON.stringify(params, function(k, v) {
-			if (v===null) {
-				return '';
-			}
-			if (v===+v) {
-				return v.toString();
-			}
-			return v;
-		});
-		json=this.utf8Clean(json);
-		params=JSON.parse(json);
-		params._md5=SparkMD5.hash(json);
-	}
 	if (!fail) {
 		fail=function(ret) {
 			console.log('ERROR: '+JSON.stringify(ret));
@@ -314,6 +294,7 @@ PhoneSync.prototype.apiNext=function() {
 		call=this.apiCalls.shift();
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
+	that.mostRecentApiCallType=action;
 	that.apiXHR=$.post(url, params)
 		.done(function(ret) {
 			that.options.onNetwork();
@@ -323,7 +304,7 @@ PhoneSync.prototype.apiNext=function() {
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
-				that.options.onErrorHandler(ret);
+				that.options.errorHandler(ret);
 			}
 			else {
 				if (action==='login') {
@@ -350,7 +331,9 @@ PhoneSync.prototype.apiQueueClear=function(type) {
 	}
 	var that=this;
 	if (that.apiXHR) {
-		that.apiXHR.abort();
+		if (type=='all' || type==that.mostRecentApiCallType) {
+			that.apiXHR.abort();
+		}
 	}
 	var arr=[];
 	for (var i=0;i<that.apiCalls.length;++i) {
@@ -418,12 +401,9 @@ PhoneSync.prototype.delayApiNext=function(delay) {
 PhoneSync.prototype.delayFilePutJSON=function(delay) {
 	var that=this;
 	window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-	var timeout=delay||that.options.timeout;
-	console.log(timeout);
 	window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-		console.log('setTimeout completed');
 		that.filePutJSON();
-	}, timeout);
+	}, delay||that.options.timeout);
 };
 PhoneSync.prototype.delayIdxPutJSON=function(delay) {
 	var that=this;
@@ -508,7 +488,6 @@ PhoneSync.prototype.delete=function(key, callback) {
 	this.options.onDelete(key);
 };
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
-	console.log('read', name);
 	var that=this;
 	if (this.disableFS) {
 		return;
@@ -569,14 +548,12 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	var o=that.filePutQueue.shift();
 	if (o) {
 		name=o[0];
-							console.log('writelock', name, that.filePutQueue.length);
 		obj=o[1];
 		callback=o[2];
 		var json=JSON.stringify(obj);
 		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
-				entry.createWriter(
-					function(writer) {
+				entry.createWriter(function(writer) {
 						writer.onwriteend=function() {
 							if (callback) {
 								callback();
@@ -596,7 +573,6 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 								});
 							}
 							that.filePutJSONLock=false;
-							console.log('writeunlock', name, that.filePutQueue.length);
 							if (that.filePutQueue.length) {
 								that.delayFilePutJSON(1);
 							}
@@ -605,18 +581,13 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 					},
 					function(err) { // failed to create writer
 						console.log('ERROR', 'failed to create writer', err);
-						that.filePutJSONLock=false;
-						console.log('writeunlock', name);
 						that.filePutQueue.unshift(o);
 						that.delayFilePutJSON();
-					}
-				);
+					});
 			}
 		);
 	}
 	else {
-		that.filePutJSONLock=false;
-		console.log('writeunlock', 'no name');
 		if (that.filePutQueue.length) {
 			that.delayFilePutJSON(1);
 		}
@@ -1217,13 +1188,8 @@ PhoneSync.prototype.syncDownloads=function() {
 							if (ret===null) {
 								that.options.onDownload(k+'-'+obj.id, obj);
 							}
-							if (obj.uuid===undefined) {
-								console.warn(k+'-'+obj.id, 'has no UUID set');
-							}
 							if (that.uuid==obj.uuid) { // originally came from device
-								console.log(k+'-'+obj.id, 'originally came from this device');
 								if (ret===null) {
-									console.log('but it\'s missing from the database so let\'s save it anyway');
 									that.save({
 										'key':k+'-'+obj.id,
 										'obj':obj
@@ -1291,6 +1257,7 @@ PhoneSync.prototype.syncUploads=function() {
 		}
 		that.alreadyDoingSyncUpload=1;
 		that.get(key, function(ret) {
+			console.log(ret);
 			if (ret===null) { // item does not exist. remove from queue
 				console.log('object did not exist. removing.');
 				obj.keys.shift();
@@ -1309,7 +1276,10 @@ PhoneSync.prototype.syncUploads=function() {
 				that.alreadyDoingSyncUpload=0;
 			}, 60000);
 			that.api(
-				'syncUploads', ret,
+				'syncUploads', {
+					'key':ret.key,
+					'obj':JSON.stringify(ret.obj)
+				},
 				function(ret) { //  success
 					clearTimeout(window.syncUploadsClearTimeout);
 					if (obj.keys[0]!==key) {
@@ -1423,7 +1393,3 @@ PhoneSync.prototype.utf8Clean=function(str) {
 }
 
 var setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);
-
-
-// see https://github.com/satazor/SparkMD5
-(function(factory){if(typeof exports==="object"){module.exports=factory()}else if(typeof define==="function"&&define.amd){define(factory)}else{var glob;try{glob=window}catch(e){glob=self}glob.SparkMD5=factory()}})(function(undefined){"use strict";var add32=function(a,b){return a+b&4294967295},cmn=function(q,a,b,x,s,t){a=add32(add32(a,q),add32(x,t));return add32(a<<s|a>>>32-s,b)},ff=function(a,b,c,d,x,s,t){return cmn(b&c|~b&d,a,b,x,s,t)},gg=function(a,b,c,d,x,s,t){return cmn(b&d|c&~d,a,b,x,s,t)},hh=function(a,b,c,d,x,s,t){return cmn(b^c^d,a,b,x,s,t)},ii=function(a,b,c,d,x,s,t){return cmn(c^(b|~d),a,b,x,s,t)},md5cycle=function(x,k){var a=x[0],b=x[1],c=x[2],d=x[3];a=ff(a,b,c,d,k[0],7,-680876936);d=ff(d,a,b,c,k[1],12,-389564586);c=ff(c,d,a,b,k[2],17,606105819);b=ff(b,c,d,a,k[3],22,-1044525330);a=ff(a,b,c,d,k[4],7,-176418897);d=ff(d,a,b,c,k[5],12,1200080426);c=ff(c,d,a,b,k[6],17,-1473231341);b=ff(b,c,d,a,k[7],22,-45705983);a=ff(a,b,c,d,k[8],7,1770035416);d=ff(d,a,b,c,k[9],12,-1958414417);c=ff(c,d,a,b,k[10],17,-42063);b=ff(b,c,d,a,k[11],22,-1990404162);a=ff(a,b,c,d,k[12],7,1804603682);d=ff(d,a,b,c,k[13],12,-40341101);c=ff(c,d,a,b,k[14],17,-1502002290);b=ff(b,c,d,a,k[15],22,1236535329);a=gg(a,b,c,d,k[1],5,-165796510);d=gg(d,a,b,c,k[6],9,-1069501632);c=gg(c,d,a,b,k[11],14,643717713);b=gg(b,c,d,a,k[0],20,-373897302);a=gg(a,b,c,d,k[5],5,-701558691);d=gg(d,a,b,c,k[10],9,38016083);c=gg(c,d,a,b,k[15],14,-660478335);b=gg(b,c,d,a,k[4],20,-405537848);a=gg(a,b,c,d,k[9],5,568446438);d=gg(d,a,b,c,k[14],9,-1019803690);c=gg(c,d,a,b,k[3],14,-187363961);b=gg(b,c,d,a,k[8],20,1163531501);a=gg(a,b,c,d,k[13],5,-1444681467);d=gg(d,a,b,c,k[2],9,-51403784);c=gg(c,d,a,b,k[7],14,1735328473);b=gg(b,c,d,a,k[12],20,-1926607734);a=hh(a,b,c,d,k[5],4,-378558);d=hh(d,a,b,c,k[8],11,-2022574463);c=hh(c,d,a,b,k[11],16,1839030562);b=hh(b,c,d,a,k[14],23,-35309556);a=hh(a,b,c,d,k[1],4,-1530992060);d=hh(d,a,b,c,k[4],11,1272893353);c=hh(c,d,a,b,k[7],16,-155497632);b=hh(b,c,d,a,k[10],23,-1094730640);a=hh(a,b,c,d,k[13],4,681279174);d=hh(d,a,b,c,k[0],11,-358537222);c=hh(c,d,a,b,k[3],16,-722521979);b=hh(b,c,d,a,k[6],23,76029189);a=hh(a,b,c,d,k[9],4,-640364487);d=hh(d,a,b,c,k[12],11,-421815835);c=hh(c,d,a,b,k[15],16,530742520);b=hh(b,c,d,a,k[2],23,-995338651);a=ii(a,b,c,d,k[0],6,-198630844);d=ii(d,a,b,c,k[7],10,1126891415);c=ii(c,d,a,b,k[14],15,-1416354905);b=ii(b,c,d,a,k[5],21,-57434055);a=ii(a,b,c,d,k[12],6,1700485571);d=ii(d,a,b,c,k[3],10,-1894986606);c=ii(c,d,a,b,k[10],15,-1051523);b=ii(b,c,d,a,k[1],21,-2054922799);a=ii(a,b,c,d,k[8],6,1873313359);d=ii(d,a,b,c,k[15],10,-30611744);c=ii(c,d,a,b,k[6],15,-1560198380);b=ii(b,c,d,a,k[13],21,1309151649);a=ii(a,b,c,d,k[4],6,-145523070);d=ii(d,a,b,c,k[11],10,-1120210379);c=ii(c,d,a,b,k[2],15,718787259);b=ii(b,c,d,a,k[9],21,-343485551);x[0]=add32(a,x[0]);x[1]=add32(b,x[1]);x[2]=add32(c,x[2]);x[3]=add32(d,x[3])},md5blk=function(s){var md5blks=[],i;for(i=0;i<64;i+=4){md5blks[i>>2]=s.charCodeAt(i)+(s.charCodeAt(i+1)<<8)+(s.charCodeAt(i+2)<<16)+(s.charCodeAt(i+3)<<24)}return md5blks},md5blk_array=function(a){var md5blks=[],i;for(i=0;i<64;i+=4){md5blks[i>>2]=a[i]+(a[i+1]<<8)+(a[i+2]<<16)+(a[i+3]<<24)}return md5blks},md51=function(s){var n=s.length,state=[1732584193,-271733879,-1732584194,271733878],i,length,tail,tmp,lo,hi;for(i=64;i<=n;i+=64){md5cycle(state,md5blk(s.substring(i-64,i)))}s=s.substring(i-64);length=s.length;tail=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];for(i=0;i<length;i+=1){tail[i>>2]|=s.charCodeAt(i)<<(i%4<<3)}tail[i>>2]|=128<<(i%4<<3);if(i>55){md5cycle(state,tail);for(i=0;i<16;i+=1){tail[i]=0}}tmp=n*8;tmp=tmp.toString(16).match(/(.*?)(.{0,8})$/);lo=parseInt(tmp[2],16);hi=parseInt(tmp[1],16)||0;tail[14]=lo;tail[15]=hi;md5cycle(state,tail);return state},md51_array=function(a){var n=a.length,state=[1732584193,-271733879,-1732584194,271733878],i,length,tail,tmp,lo,hi;for(i=64;i<=n;i+=64){md5cycle(state,md5blk_array(a.subarray(i-64,i)))}a=i-64<n?a.subarray(i-64):new Uint8Array(0);length=a.length;tail=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];for(i=0;i<length;i+=1){tail[i>>2]|=a[i]<<(i%4<<3)}tail[i>>2]|=128<<(i%4<<3);if(i>55){md5cycle(state,tail);for(i=0;i<16;i+=1){tail[i]=0}}tmp=n*8;tmp=tmp.toString(16).match(/(.*?)(.{0,8})$/);lo=parseInt(tmp[2],16);hi=parseInt(tmp[1],16)||0;tail[14]=lo;tail[15]=hi;md5cycle(state,tail);return state},hex_chr=["0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f"],rhex=function(n){var s="",j;for(j=0;j<4;j+=1){s+=hex_chr[n>>j*8+4&15]+hex_chr[n>>j*8&15]}return s},hex=function(x){var i;for(i=0;i<x.length;i+=1){x[i]=rhex(x[i])}return x.join("")},md5=function(s){return hex(md51(s))},SparkMD5=function(){this.reset()};if(md5("hello")!=="5d41402abc4b2a76b9719d911017c592"){add32=function(x,y){var lsw=(x&65535)+(y&65535),msw=(x>>16)+(y>>16)+(lsw>>16);return msw<<16|lsw&65535}}SparkMD5.prototype.append=function(str){if(/[\u0080-\uFFFF]/.test(str)){str=unescape(encodeURIComponent(str))}this.appendBinary(str);return this};SparkMD5.prototype.appendBinary=function(contents){this._buff+=contents;this._length+=contents.length;var length=this._buff.length,i;for(i=64;i<=length;i+=64){md5cycle(this._state,md5blk(this._buff.substring(i-64,i)))}this._buff=this._buff.substr(i-64);return this};SparkMD5.prototype.end=function(raw){var buff=this._buff,length=buff.length,i,tail=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],ret;for(i=0;i<length;i+=1){tail[i>>2]|=buff.charCodeAt(i)<<(i%4<<3)}this._finish(tail,length);ret=!!raw?this._state:hex(this._state);this.reset();return ret};SparkMD5.prototype._finish=function(tail,length){var i=length,tmp,lo,hi;tail[i>>2]|=128<<(i%4<<3);if(i>55){md5cycle(this._state,tail);for(i=0;i<16;i+=1){tail[i]=0}}tmp=this._length*8;tmp=tmp.toString(16).match(/(.*?)(.{0,8})$/);lo=parseInt(tmp[2],16);hi=parseInt(tmp[1],16)||0;tail[14]=lo;tail[15]=hi;md5cycle(this._state,tail)};SparkMD5.prototype.reset=function(){this._buff="";this._length=0;this._state=[1732584193,-271733879,-1732584194,271733878];return this};SparkMD5.prototype.destroy=function(){delete this._state;delete this._buff;delete this._length};SparkMD5.hash=function(str,raw){if(/[\u0080-\uFFFF]/.test(str)){str=unescape(encodeURIComponent(str))}var hash=md51(str);return!!raw?hash:hex(hash)};SparkMD5.hashBinary=function(content,raw){var hash=md51(content);return!!raw?hash:hex(hash)};SparkMD5.ArrayBuffer=function(){this.reset()};SparkMD5.ArrayBuffer.prototype.append=function(arr){var buff=this._concatArrayBuffer(this._buff,arr),length=buff.length,i;this._length+=arr.byteLength;for(i=64;i<=length;i+=64){md5cycle(this._state,md5blk_array(buff.subarray(i-64,i)))}this._buff=i-64<length?buff.subarray(i-64):new Uint8Array(0);return this};SparkMD5.ArrayBuffer.prototype.end=function(raw){var buff=this._buff,length=buff.length,tail=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],i,ret;for(i=0;i<length;i+=1){tail[i>>2]|=buff[i]<<(i%4<<3)}this._finish(tail,length);ret=!!raw?this._state:hex(this._state);this.reset();return ret};SparkMD5.ArrayBuffer.prototype._finish=SparkMD5.prototype._finish;SparkMD5.ArrayBuffer.prototype.reset=function(){this._buff=new Uint8Array(0);this._length=0;this._state=[1732584193,-271733879,-1732584194,271733878];return this};SparkMD5.ArrayBuffer.prototype.destroy=SparkMD5.prototype.destroy;SparkMD5.ArrayBuffer.prototype._concatArrayBuffer=function(first,second){var firstLength=first.length,result=new Uint8Array(firstLength+second.byteLength);result.set(first);result.set(new Uint8Array(second),firstLength);return result};SparkMD5.ArrayBuffer.hash=function(arr,raw){var hash=md51_array(new Uint8Array(arr));return!!raw?hash:hex(hash)};return SparkMD5});

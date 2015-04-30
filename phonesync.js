@@ -504,8 +504,13 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 					var reader=new FileReader();
 					reader.onloadend=function(evt) {
 						if (evt.target.result) {
-							var res=that.utf8Clean(evt.target.result);
-							success(JSON.parse(res));
+							success(JSON.parse(
+								evt.target.result
+									.replace(/,\\*"[^"]*":\[\]/, '')
+									.replace(/\\*"[^"]*":\[\],/, '')
+									.replace(/[\u2018\u2019]/g, "'")
+									.replace(/[\u201C\u201D]/g, '\\"')
+							));
 						}
 						else {
 							fail();
@@ -1257,7 +1262,6 @@ PhoneSync.prototype.syncUploads=function() {
 		}
 		that.alreadyDoingSyncUpload=1;
 		that.get(key, function(ret) {
-			console.log(ret);
 			if (ret===null) { // item does not exist. remove from queue
 				console.log('object did not exist. removing.');
 				obj.keys.shift();
@@ -1316,80 +1320,4 @@ PhoneSync.prototype.tablesLastUpdateClear=function() {
 		}
 	}
 };
-PhoneSync.prototype.utf8Encode=function(argString) {
-	//  discuss at: http://phpjs.org/functions/utf8Encode/
-	// original by: Webtoolkit.info (http://www.webtoolkit.info/)
-	// improved by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
-	// improved by: sowberry
-	// improved by: Jack
-	// improved by: Yves Sucaet
-	// improved by: kirilloid
-	// bugfixed by: Onno Marsman
-	// bugfixed by: Onno Marsman
-	// bugfixed by: Ulrich
-	// bugfixed by: Rafal Kukawski
-	// bugfixed by: kirilloid
-	//   example 1: utf8Encode('Kevin van Zonneveld');
-	//   returns 1: 'Kevin van Zonneveld'
-
-	if (null === argString || 'undefined' === typeof argString) {
-		return '';
-	}
-
-	var string = (argString + '');
-	var utftext = '', start=0, end=0, stringl = string.length;
-
-	for (var n = 0; n < stringl; n++) {
-		var c1 = string.charCodeAt(n);
-		var enc = null;
-
-		if (128 > c1) {
-			end++;
-		}
-		else if (127 < c1 && 2048 > c1) {
-			enc = String.fromCharCode(
-				(c1 >> 6) | 192, (c1 & 63) | 128
-			);
-		}
-		else if ((c1 & 0xF800) != 0xD800) {
-			enc = String.fromCharCode(
-				(c1 >> 12) | 224, ((c1 >> 6) & 63) | 128, (c1 & 63) | 128
-			);
-		}
-		else {
-			// surrogate pairs
-			if (0xD800 != (c1 & 0xFC00)) {
-				throw new RangeError('Unmatched trail surrogate at ' + n);
-			}
-			var c2 = string.charCodeAt(++n);
-			if (0xDC00 !== (c2 & 0xFC00)) {
-				throw new RangeError('Unmatched lead surrogate at ' + (n - 1));
-			}
-			c1 = ((c1 & 0x3FF) << 10) + (c2 & 0x3FF) + 0x10000;
-			enc = String.fromCharCode(
-				(c1 >> 18) | 240, ((c1 >> 12) & 63) | 128, ((c1 >> 6) & 63) | 128, (c1 & 63) | 128
-			);
-		}
-		if (null !== enc) {
-			if (end > start) {
-				utftext += string.slice(start, end);
-			}
-			utftext += enc;
-			start = end = n + 1;
-		}
-	}
-
-	if (end > start) {
-		utftext += string.slice(start, stringl);
-	}
-	return utftext;
-};
-PhoneSync.prototype.utf8Clean=function(str) {
-	return str
-		.replace(/,\\*"[^"]*":\[\]/, '')
-		.replace(/\\*"[^"]*":\[\],/, '')
-		.replace(/[\u2018\u2019]/g, "'")
-		.replace(/[\u201C\u201D]/g, '\\"');
-}
-
 var setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);

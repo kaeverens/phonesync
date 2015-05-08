@@ -100,27 +100,6 @@ function PhoneSync(params) {
 									files.push(entry.name);
 								}
 							}
-							var indexes={};
-							for (var i=0;i<files.length;++i) {
-								if (!/-/.test(files[i])) {
-									continue;
-								}
-								var n=files[i];
-								do {
-									n=n.replace(/-[^\-]*$/, '');
-									indexes[n]=1;
-								} while(/-/.test(n));
-							}
-							for (var i=0;i<files.length;++i) {
-								var name=files[i];
-								if (!/-/.test(name)) {
-									continue;
-								}
-								if (that.options.nonIndexableFiles.test(name)) {
-									continue;
-								}
-								that.idAdd(name.replace(/-[^-]*$/, ''), name.replace(/.*-/, ''));
-							}
 						}, function(err) {
 							console.log('error starting index checker');
 							console.log(err);
@@ -304,7 +283,9 @@ PhoneSync.prototype.apiNext=function() {
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
-				that.options.errorHandler(ret);
+				if (that.options.errorHandler) {
+					that.options.errorHandler(ret);
+				}
 			}
 			else {
 				if (action==='login') {

@@ -524,10 +524,10 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 		fail
 	);
 };
-PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
+PhoneSync.prototype.filePutJSON=function(name, obj) {
 	var that=this;
 	if (that.disableFS || 'none'===that.options.dbType) {
-		return callback?callback():0;
+		return that.options.onSave?that.options.onSave(name, obj):0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
@@ -539,7 +539,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 			 break;
 			}
 		}
-		that.filePutQueue.push([name, obj, callback]);
+		that.filePutQueue.push([name, obj]);
 		return that.delayFilePutJSON(1);
 	}
 	// }
@@ -554,14 +554,13 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 	if (o) {
 		name=o[0];
 		obj=o[1];
-		callback=o[2];
 		var json=JSON.stringify(obj);
 		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
 				entry.createWriter(function(writer) {
 						writer.onwriteend=function() {
-							if (callback) {
-								callback();
+							if (that.options.onSave) {
+								that.options.onSave(name, obj);
 							}
 							if (name!=='_files') {
 								that.get('_files', function(ret) {
@@ -853,10 +852,10 @@ PhoneSync.prototype.idDel=function(name, id) {
 		}, false, true);
 	});
 };
-PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
+PhoneSync.prototype.idxPutJSON=function(name, obj) {
 	var that=this;
 	if (that.disableFS || 'none'===that.options.dbType) {
-		return callback?callback():0;
+		return that.options.onSave?that.options.onSave(name, obj):0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
@@ -868,7 +867,7 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 			 break;
 			}
 		}
-		that.filePutQueue.push([name, obj, callback]);
+		that.filePutQueue.push([name, obj]);
 		return that.delayIdxPutJSON(1);
 	}
 	// }
@@ -883,8 +882,6 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 	if (o) {
 		name=o[0];
 		obj=o[1];
-		callback=o[2];
-
 		var txn=that.fs.transaction([that.options.dbName], 'readwrite');
 		var store=txn.objectStore(that.options.dbName);
 		txn.onerror=function(e) {
@@ -893,8 +890,8 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 			that.delayIdxPutJSON();
 		}
 		txn.oncomplete=function() {
-			if (callback) {
-				callback();
+			if (that.options.onSave) {
+				that.options.onSave(name, obj);
 			}
 			if (name!=='_files') {
 				that.get('_files', function(ret) {
@@ -1047,9 +1044,6 @@ PhoneSync.prototype.sanitise=function(name) {
 PhoneSync.prototype.save=function(obj, callback, nosync) {
 	var that=this;
 	that.options.onBeforeSave(obj.key, obj);
-	function onSave() {
-		that.options.onSave(obj.key, obj);
-	}
 	if (that.disableFS) {
 		return;
 	}
@@ -1064,10 +1058,10 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 				that.addToSyncUploads(obj.key);
 			}
 			if (that.options.dbType=='file') {
-				that.filePutJSON(obj.key, obj, onSave);
+				that.filePutJSON(obj.key, obj);
 			}
 			else if (that.options.dbType=='indexeddb') {
-				that.idxPutJSON(obj.key, obj, onSave);
+				that.idxPutJSON(obj.key, obj);
 			}
 		});
 	}
@@ -1079,10 +1073,10 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 			that.addToSyncUploads(obj.key);
 		}
 		if (that.options.dbType=='file') {
-			that.filePutJSON(obj.key, obj, onSave);
+			that.filePutJSON(obj.key, obj);
 		}
 		else if (that.options.dbType=='indexeddb') {
-			that.idxPutJSON(obj.key, obj, onSave);
+			that.idxPutJSON(obj.key, obj);
 		}
 	}
 };

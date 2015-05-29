@@ -1,10 +1,11 @@
 function PhoneSync(params) {
+	window.PhoneSync.Instance=this;
 	if (!window.Connection) {
 		window.Connection={
 			'NONE':0
 		};
 	}
-	this.options={
+	PhoneSync.Instance.options={
 		'dbName':'tmp',
 		'dbType':params.dbType
 			|| (/http/.test(document.location.toString())?'indexeddb':'file'),
@@ -38,20 +39,19 @@ function PhoneSync(params) {
 		'onDelete':function() { // called when a key is deleted
 		}
 	};
-	$.extend(this.options, params);
-	this.fs=false;
-	this.numberOfUploads=0;
-	this.allowDownloads=true; // don't allow downloads to happen while uploads are pending
-	this.disableFS=false;
-	this.filePutQueue=[];
-	this.fileGetQueue=[];
-	this.networkInUse=false;
-	this.loggedIn=false;
-	this.tables={};
-	this.cache={};
-	this.apiCalls=[];
-	this.tablesLastUpdateClear();
-	window.PhoneSync.Instance=this;
+	$.extend(PhoneSync.Instance.options, params);
+	PhoneSync.Instance.fs=false;
+	PhoneSync.Instance.numberOfUploads=0;
+	PhoneSync.Instance.allowDownloads=true; // don't allow downloads to happen while uploads are pending
+	PhoneSync.Instance.disableFS=false;
+	PhoneSync.Instance.filePutQueue=[];
+	PhoneSync.Instance.fileGetQueue=[];
+	PhoneSync.Instance.networkInUse=false;
+	PhoneSync.Instance.loggedIn=false;
+	PhoneSync.Instance.tables={};
+	PhoneSync.Instance.cache={};
+	PhoneSync.Instance.apiCalls=[];
+	PhoneSync.Instance.tablesLastUpdateClear();
 	Date.prototype.toYMD = function Date_toYMD() {
 		var year, month, day;
 		year = String(this.getFullYear());
@@ -65,7 +65,7 @@ function PhoneSync(params) {
 		}
 		return year + "-" + month + "-" + day;
 	};
-	if (this.options.dbType=='file') {
+	if (PhoneSync.Instance.options.dbType=='file') {
 		window.requestFileSystem(
 			LocalFileSystem.PERSISTENT, 0,
 			function(filesystem) {
@@ -110,7 +110,7 @@ function PhoneSync(params) {
 			null
 		);
 	}
-	else if (this.options.dbType=='indexeddb') {
+	else if (PhoneSync.Instance.options.dbType=='indexeddb') {
 		try {
 			PhoneSync.Instance.dbSetupIndexedDB();
 		}
@@ -140,7 +140,7 @@ function PhoneSync(params) {
 }
 PhoneSync.prototype.addToSyncUploads=function(key) {
 	
-	this.get('_syncUploads', function(ret) {
+	PhoneSync.Instance.get('_syncUploads', function(ret) {
 		if (!ret || ret===undefined || ret.keys===undefined) {
 			ret={
 				'key':'_syncUploads',
@@ -169,24 +169,24 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			params.PHPSESSID=credentials.session_id;
 		}
 	}
-	if (this.options.urls[action]===undefined) {
+	if (PhoneSync.Instance.options.urls[action]===undefined) {
 		console.log('no url defined for the action', action);
 		fail();
 		return;
 	}
-	var url=this.options.urls[action];
+	var url=PhoneSync.Instance.options.urls[action];
 	if ('syncDownloads' === action) {
 		var lastUpdates={};
-		$.each(this.tables, function(k, v) {
+		$.each(PhoneSync.Instance.tables, function(k, v) {
 			lastUpdates[k]='0000-00-00 00:00:00' === v.lastUpdate ? 0 : v.lastUpdate;
 		});
 		params._lastUpdates=lastUpdates;
 	}
-	if (this.options.version) {
-		params._v=this.options.version;
+	if (PhoneSync.Instance.options.version) {
+		params._v=PhoneSync.Instance.options.version;
 	}
 	params._uuid=(window.device&&device.uuid)?device.uuid:'no-uid|'+uid;
-	this.uuid=params._uuid;
+	PhoneSync.Instance.uuid=params._uuid;
 	function recursiveClean(obj) {
 		for (var prop in obj) {
 			if (obj.hasOwnProperty(prop)) {
@@ -218,12 +218,12 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			console.log('ERROR: '+JSON.stringify(ret));
 		};
 	}
-	this.apiCalls.push([url, params, success, fail, action]);
-	this.apiNext();
+	PhoneSync.Instance.apiCalls.push([url, params, success, fail, action]);
+	PhoneSync.Instance.apiNext();
 };
 PhoneSync.prototype.apiAlreadyInQueue=function(name) {
-	for (var i=0;i<this.apiCalls.length;++i) {
-		if (this.apiCalls[i][4]===name) {
+	for (var i=0;i<PhoneSync.Instance.apiCalls.length;++i) {
+		if (PhoneSync.Instance.apiCalls[i][4]===name) {
 			return true;
 		}
 	}
@@ -258,16 +258,16 @@ PhoneSync.prototype.apiNext=function() {
 	}
 	// }
 	if (!call) { // otherwise, uploads are priority
-		for (i=0;i<this.apiCalls.length;++i) {
-			if ('syncUploads' === this.apiCalls[i][4]) {
-				call=this.apiCalls[i];
-				this.apiCalls.splice(i, 1);
+		for (i=0;i<PhoneSync.Instance.apiCalls.length;++i) {
+			if ('syncUploads' === PhoneSync.Instance.apiCalls[i][4]) {
+				call=PhoneSync.Instance.apiCalls[i];
+				PhoneSync.Instance.apiCalls.splice(i, 1);
 			 break;
 			}
 		}
 	}
 	if (!call) { // else, just pick the first in the list
-		call=this.apiCalls.shift();
+		call=PhoneSync.Instance.apiCalls.shift();
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
 	PhoneSync.Instance.mostRecentApiCallType=action;
@@ -404,12 +404,12 @@ PhoneSync.prototype.delaySyncUploads=function(delay) {
 };
 PhoneSync.prototype.delete=function(key, callback) {
 	
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
-	delete this.cache[key];
+	delete PhoneSync.Instance.cache[key];
 	if (/-/.test(key)) {
-		this.idDel(key.replace(/-[^-]*$/, ''), key.replace(/.*-/, ''));
+		PhoneSync.Instance.idDel(key.replace(/-[^-]*$/, ''), key.replace(/.*-/, ''));
 	}
 	if (callback) {
 		callback();
@@ -460,19 +460,19 @@ PhoneSync.prototype.delete=function(key, callback) {
 			}
 		});
 	}
-	this.options.onDelete(key);
+	PhoneSync.Instance.options.onDelete(key);
 };
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
-	if (!this.fs) {
+	if (!PhoneSync.Instance.fs) {
 		return window.setTimeout(function() {
 			PhoneSync.Instance.fileGetJSON(name, success, fail);
 		}, PhoneSync.Instance.options.timeout);
 	}
-	this.fs.getFile(this.sanitise(name), {'create':false, 'exclusive':false},
+	PhoneSync.Instance.fs.getFile(PhoneSync.Instance.sanitise(name), {'create':false, 'exclusive':false},
 		function(entry) {
 			entry.file(
 				function(file) {
@@ -710,12 +710,12 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 		callback(null);
 	}
 	
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
-	if (this.cache[key]) {
-		if (!(this.cache[key]===null && download)) {
-			return callback($.extend({}, this.cache[key]));
+	if (PhoneSync.Instance.cache[key]) {
+		if (!(PhoneSync.Instance.cache[key]===null && download)) {
+			return callback($.extend({}, PhoneSync.Instance.cache[key]));
 		}
 	}
 	if ('_rekeys' === key) {
@@ -733,15 +733,15 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 };
 PhoneSync.prototype.getAll=function(key, callback) {
 	
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
 	var keys=[];
-	if (this.cache[key]) {
-		keys=this.cache[key].obj;
+	if (PhoneSync.Instance.cache[key]) {
+		keys=PhoneSync.Instance.cache[key].obj;
 	}
 	else {
-		this.get(key, function(ret) {
+		PhoneSync.Instance.get(key, function(ret) {
 			if (ret===undefined || ret===null) {
 				return callback([]);
 			}
@@ -759,11 +759,11 @@ PhoneSync.prototype.getAll=function(key, callback) {
 		}
 	}
 	for (var i=0;i<keys.length;++i) {
-		this.get(key+'-'+keys[i], getObject);
+		PhoneSync.Instance.get(key+'-'+keys[i], getObject);
 	}
 };
 PhoneSync.prototype.getAllById=function(keys, callback) {
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
 	var rows=[];
@@ -778,7 +778,7 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 		}
 	}
 	for (var i=0;i<keys.length;++i) {
-		this.get(keys[i], getObject);
+		PhoneSync.Instance.get(keys[i], getObject);
 	}
 };
 PhoneSync.prototype.getSome=function(keys, callback) {
@@ -796,7 +796,7 @@ PhoneSync.prototype.getSome=function(keys, callback) {
 PhoneSync.prototype.idAdd=function(name, id, callback) {
 	
 	id=''+id;
-	this.get(name, function(ret) {
+	PhoneSync.Instance.get(name, function(ret) {
 		if (!ret || !ret.obj) {
 			ret={'obj':[]};
 		}
@@ -818,7 +818,7 @@ PhoneSync.prototype.idAdd=function(name, id, callback) {
 PhoneSync.prototype.idDel=function(name, id) {
 	
 	id=''+id;
-	this.get(name, function(ret) {
+	PhoneSync.Instance.get(name, function(ret) {
 		ret=ret||{'obj':[]};
 		var arr=[];
 		if (ret.obj) {
@@ -907,10 +907,10 @@ PhoneSync.prototype.idxPutJSON=function(name, obj) {
 };
 PhoneSync.prototype.idxGetJSON=function(name, success, fail) {
 	
-	if (this.disableFS) {
+	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
-	if (!this.fs) {
+	if (!PhoneSync.Instance.fs) {
 		return window.setTimeout(function() {
 			PhoneSync.Instance.idxGetJSON(name, success, fail);
 		}, PhoneSync.Instance.options.timeout);
@@ -1003,7 +1003,7 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	if (oldId==newId) {
 		return;
 	}
-	this.get('_rekeys', function(obj) {
+	PhoneSync.Instance.get('_rekeys', function(obj) {
 		if (null === obj) {
 			obj={
 				'key':'_rekeys',
@@ -1013,7 +1013,7 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 		obj.changes[table+'-'+oldId]=table+'-'+newId;
 		lch.save(obj, null, true);
 	});
-	this.get(table+'-'+oldId, function(obj) {
+	PhoneSync.Instance.get(table+'-'+oldId, function(obj) {
 		obj.key=table+'-'+newId;
 		obj.obj.id=newId;
 		PhoneSync.Instance.save(obj, callback, true);
@@ -1289,8 +1289,8 @@ PhoneSync.prototype.syncUploads=function() {
 	});
 };
 PhoneSync.prototype.tablesLastUpdateClear=function() {
-	for (var i=0;i<this.options.tables.length;++i) {
-		this.tables[this.options.tables[i]]={
+	for (var i=0;i<PhoneSync.Instance.options.tables.length;++i) {
+		PhoneSync.Instance.tables[PhoneSync.Instance.options.tables[i]]={
 			'lastUpdate':'0000-00-00 00:00:00'
 		}
 	}

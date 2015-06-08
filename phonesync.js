@@ -529,13 +529,11 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 		name=PhoneSync.Instance.currentFilePutFile[0];
 		obj=PhoneSync.Instance.currentFilePutFile[1];
 		var json=JSON.stringify(obj);
-		console.log('opening file '+name+' to write');
 		PhoneSync.Instance.fs.getFile(PhoneSync.Instance.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
 				entry.createWriter(
 					function(writer) {
 						writer.onwriteend=function() {
-							console.log('written');
 							delete PhoneSync.Instance.cache[name];
 							if (PhoneSync.Instance.options.onSave) {
 								PhoneSync.Instance.options.onSave(name, obj);
@@ -560,7 +558,6 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 								PhoneSync.Instance.delayFilePutJSON(1);
 							}
 						};
-						console.log('WRITING');
 						writer.write(json);
 					},
 					function(err) { // failed to create writer

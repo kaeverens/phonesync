@@ -996,7 +996,6 @@ PhoneSync.prototype.nuke=function(callback) {
 	PhoneSync.Instance.cache={};
 };
 PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
-		console.log(newId);
 	if (oldId==newId) {
 		return;
 	}
@@ -1013,7 +1012,6 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 	PhoneSync.Instance.get(table+'-'+oldId, function(obj) {
 		obj.key=table+'-'+newId;
 		obj.obj.id=newId;
-		console.log(obj);
 		PhoneSync.Instance.save(obj, callback, true);
 		PhoneSync.Instance.delete(table+'-'+oldId);
 	});
@@ -1218,9 +1216,11 @@ PhoneSync.prototype.syncUploads=function() {
 		}
 		var key=obj.keys[0];
 		PhoneSync.Instance.delayAllowDownloads();
+		console.log('about to upload');
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
 			return PhoneSync.Instance.save(obj, function() {
+				console.log('syncUploads contained an invalid key, '+key+'. removed.');
 				PhoneSync.Instance.delaySyncUploads(1);
 			}, true);
 		}
@@ -1230,10 +1230,9 @@ PhoneSync.prototype.syncUploads=function() {
 		PhoneSync.Instance.alreadyDoingSyncUpload=1;
 		PhoneSync.Instance.get(key, function(ret) {
 			if (ret===null) { // item does not exist. remove from queue
-				console.log('object did not exist. removing.');
+				console.log('object with key '+key+' does not exist');
 				obj.keys.shift();
 				return PhoneSync.Instance.save(obj, function() {
-					console.log('removed.');
 					PhoneSync.Instance.alreadyDoingSyncUpload=0;
 					PhoneSync.Instance.delaySyncUploads(1);
 				}, true);

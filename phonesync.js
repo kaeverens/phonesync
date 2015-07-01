@@ -401,7 +401,6 @@ PhoneSync.prototype.delaySyncUploads=function(delay) {
 	}, delay||PhoneSync.Instance.options.timeout);
 };
 PhoneSync.prototype.delete=function(key, callback) {
-	
 	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
@@ -454,18 +453,17 @@ PhoneSync.prototype.delete=function(key, callback) {
 			}
 			if (ret.files[key]) {
 				delete ret.files[key];
-				PhoneSync.Instance.save(ret);
+				PhoneSync.Instance.save(ret, null, true);
 			}
 		});
 	}
 	PhoneSync.Instance.options.onDelete(key);
 };
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
-	
 	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
-	if (!PhoneSync.Instance.fs) {
+	if (!PhoneSync.Instance.fs || PhoneSync.Instance.fileLock) {
 		return window.setTimeout(function() {
 			PhoneSync.Instance.fileGetJSON(name, success, fail);
 		}, PhoneSync.Instance.options.timeout);
@@ -475,19 +473,31 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 			entry.file(
 				function(file) {
 					var reader=new FileReader();
+					PhoneSync.Instance.fileLock=true;
 					reader.onloadend=function(evt) {
 						if (evt.target.result) {
-							success(JSON.parse(
-								evt.target.result
-									.replace(/,\\*"[^"]*":\[\]/, '')
-									.replace(/\\*"[^"]*":\[\],/, '')
-									.replace(/[\u2018\u2019]/g, "'")
-									.replace(/[\u201C\u201D]/g, '\\"')
-							));
+							var res=evt.target.result;
+							var res2=res
+								.replace(/,\\*"[^"]*":\[\]/, '')
+								.replace(/\\*"[^"]*":\[\],/, '')
+								.replace(/[\u2018\u2019]/g, "'")
+								.replace(/[\u201C\u201D]/g, '\\"');
+							try{
+								var obj=JSON.parse(res);
+								success(obj);
+							}
+							catch (e) {
+								console.warn('failed to decode file! will try again in a moment');
+								console.warn(e, res);
+								setTimeout(function() {
+									PhoneSync.prototype.fileGetJSON(name, success, fail);
+								}, 100);
+							}
 						}
 						else {
 							fail();
 						}
+						PhoneSync.Instance.fileLock=false;
 					};
 					reader.readAsText(file);
 				},
@@ -516,12 +526,12 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 	}
 	// }
 	// { if a file is currently being written, then come back later
-	if (PhoneSync.Instance.filePutJSONLock) {
+	if (PhoneSync.Instance.fileLock) {
 		return PhoneSync.Instance.delayFilePutJSON(1);
 	}
 	// }
 	// { write a file
-	PhoneSync.Instance.filePutJSONLock=true;
+	PhoneSync.Instance.fileLock=true;
 	PhoneSync.Instance.currentFilePutFile=PhoneSync.Instance.filePutQueue.shift();
 	if (PhoneSync.Instance.currentFilePutFile) {
 		name=PhoneSync.Instance.currentFilePutFile[0];
@@ -532,7 +542,8 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 				entry.createWriter(
 					function(writer) {
 						writer.onwriteend=function() {
-							delete PhoneSync.Instance.cache[name];
+//							delete PhoneSync.Instance.cache[name]; // can't remember why this is here. caching issues?
+							delete PhoneSync.Instance.currentFilePutFile;
 							if (PhoneSync.Instance.options.onSave) {
 								PhoneSync.Instance.options.onSave(name, obj);
 							}
@@ -550,7 +561,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 									}
 								});
 							}
-							PhoneSync.Instance.filePutJSONLock=false;
+							PhoneSync.Instance.fileLock=false;
 							if (PhoneSync.Instance.filePutQueue.length) {
 								PhoneSync.Instance.delayFilePutJSON(1);
 							}
@@ -560,6 +571,7 @@ PhoneSync.prototype.filePutJSON=function(name, obj) {
 					function(err) { // failed to create writer
 						console.log('ERROR', 'failed to create writer', err);
 						PhoneSync.Instance.filePutQueue.unshift(PhoneSync.Instance.currentFilePutFile);
+						delete PhoneSync.Instance.currentFilePutFile;
 						PhoneSync.Instance.delayFilePutJSON();
 					}
 				);
@@ -729,7 +741,6 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 	}
 };
 PhoneSync.prototype.getAll=function(key, callback) {
-	
 	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
@@ -760,11 +771,6 @@ PhoneSync.prototype.getAll=function(key, callback) {
 	}
 };
 PhoneSync.prototype.getAllById=function(keys, callback) {
-	if (PhoneSync.Instance.disableFS) {
-		return;
-	}
-	var rows=[];
-	var toGet=keys.length;
 	function getObject(ret) {
 		if (ret!==null) {
 			rows.push($.extend({}, ret));
@@ -774,7 +780,11 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 			callback(rows);
 		}
 	}
-	for (var i=0;i<keys.length;++i) {
+	if (PhoneSync.Instance.disableFS) {
+		return;
+	}
+	var rows=[], toGet=keys.length, i=0;
+	for (;i<keys.length;++i) {
 		PhoneSync.Instance.get(keys[i], getObject);
 	}
 };
@@ -792,7 +802,6 @@ PhoneSync.prototype.getSome=function(keys, callback) {
 	}
 };
 PhoneSync.prototype.idAdd=function(name, id, callback) {
-	
 	id=''+id;
 	PhoneSync.Instance.get(name, function(ret) {
 		if (!ret || !ret.obj) {
@@ -1010,10 +1019,18 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 		lch.save(obj, null, true);
 	});
 	PhoneSync.Instance.get(table+'-'+oldId, function(obj) {
-		obj.key=table+'-'+newId;
-		obj.obj.id=newId;
-		PhoneSync.Instance.save(obj, callback, true);
-		PhoneSync.Instance.delete(table+'-'+oldId);
+ 		if (obj===null) { // temporary failure?
+ 			console.warn('re-attempting to rekey '+table+'-'+oldId+' to '+newId);
+ 			setTimeout(function() {
+ 				PhoneSync.Instance.rekey(table, oldId, newId, callback);
+ 			}, 1000);
+ 		}
+ 		else {
+ 			obj.key=table+'-'+newId;
+ 			obj.obj.id=newId;
+ 			PhoneSync.Instance.save(obj, callback, true);
+ 			PhoneSync.Instance.delete(table+'-'+oldId);
+ 		}
 	});
 };
 PhoneSync.prototype.sanitise=function(name) {
@@ -1216,7 +1233,6 @@ PhoneSync.prototype.syncUploads=function() {
 		}
 		var key=obj.keys[0];
 		PhoneSync.Instance.delayAllowDownloads();
-		console.log('about to upload');
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
 			return PhoneSync.Instance.save(obj, function() {
@@ -1225,13 +1241,15 @@ PhoneSync.prototype.syncUploads=function() {
 			}, true);
 		}
 		if (PhoneSync.Instance.alreadyDoingSyncUpload) {
+			console.log('already uploading.');
 			return PhoneSync.Instance.delaySyncUploads(1);
 		}
 		PhoneSync.Instance.alreadyDoingSyncUpload=1;
 		PhoneSync.Instance.get(key, function(ret) {
-			if (ret===null) { // item does not exist. remove from queue
-				console.log('object with key '+key+' does not exist');
+			if (ret===null) { // item does not appear to exist?
+				console.warn('object with key '+key+' does not appear to exist. pushing to end of upload queue');
 				obj.keys.shift();
+				obj.keys.push(key);
 				return PhoneSync.Instance.save(obj, function() {
 					PhoneSync.Instance.alreadyDoingSyncUpload=0;
 					PhoneSync.Instance.delaySyncUploads(1);
@@ -1258,9 +1276,9 @@ PhoneSync.prototype.syncUploads=function() {
 						PhoneSync.Instance.alreadyDoingSyncUpload=0;
 						return;
 					}
-					PhoneSync.Instance.alreadyDoingSyncUpload=0;
 					obj.keys.shift();
 					PhoneSync.Instance.save(obj, function() { // remove PhoneSync.Instance item from the queue
+						PhoneSync.Instance.alreadyDoingSyncUpload=0;
 						PhoneSync.Instance.delaySyncUploads(1);
 						PhoneSync.Instance.delaySyncDownloads();
 						if (ret) {

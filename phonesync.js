@@ -1075,9 +1075,8 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 	}
 };
 PhoneSync.prototype.syncDownloads=function() {
-	
 	if (!PhoneSync.Instance.allowDownloads || !window.credentials || PhoneSync.Instance.inSyncDownloads) {
-		return PhoneSync.Instance.delaySyncDownloads();
+		return PhoneSync.Instance.delaySyncDownloads(PhoneSync.Instance.options.syncDownloadsTimeout);
 	}
 	if (PhoneSync.Instance.apiAlreadyInQueue('syncDownloads')) {
 		return;

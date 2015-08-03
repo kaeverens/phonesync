@@ -268,6 +268,11 @@ PhoneSync.prototype.apiNext=function() {
 		call=PhoneSync.Instance.apiCalls.shift();
 	}
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
+	if (window.device) {
+		params._platform=window.device.platform;
+		params._make=window.device.manufacturer;
+		params._model=window.device.model;
+	}
 	PhoneSync.Instance.mostRecentApiCallType=action;
 	PhoneSync.Instance.apiXHR=$.post(url, params)
 		.done(function(ret) {

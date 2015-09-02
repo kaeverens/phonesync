@@ -468,6 +468,13 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	if (PhoneSync.Instance.disableFS) {
 		return;
 	}
+	if (name=='_files' || name=='_tables' || name=='_rekeys' || name=='credentials') {
+		var val=window.localStorage.getItem(name);
+		if (val) {
+			val=JSON.parse(val);
+			return success(val);
+		}
+	}
 	if (!PhoneSync.Instance.fs || PhoneSync.Instance.fileLock) {
 		return window.setTimeout(function() {
 			PhoneSync.Instance.fileGetJSON(name, success, fail);
@@ -513,6 +520,10 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 	);
 };
 PhoneSync.prototype.filePutJSON=function(name, obj) {
+	if (name=='_files' || name=='_tables' || name=='_rekeys' || name=='credentials') { // use localStorage for security and speed
+		window.localStorage.setItem(name, JSON.stringify(obj));
+		return PhoneSync.Instance.options.onSave?PhoneSync.Instance.options.onSave(name, obj):0;
+	}
 	var f;
 	if (PhoneSync.Instance.disableFS || 'none'===PhoneSync.Instance.options.dbType) {
 		return PhoneSync.Instance.options.onSave?PhoneSync.Instance.options.onSave(name, obj):0;
@@ -723,7 +734,6 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 		PhoneSync.Instance.fileGetQueue=arr;
 		callback(null);
 	}
-	
 	if (PhoneSync.Instance.disableFS) {
 		return;
 	}

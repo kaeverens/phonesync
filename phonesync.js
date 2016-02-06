@@ -1,13 +1,16 @@
-function PhoneSync(params) {
+if (!window.setZeroTimeout) {
+	window.setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);
+}
+window.PhoneSync=function(params) {
+	PhoneSync_Instance=this;
 	if (!window.Connection) {
 		window.Connection={
 			'NONE':0
 		};
 	}
-	this.options={
+	PhoneSync_Instance.options={
 		'dbName':'tmp',
-		'dbType':params.dbType
-			|| (/http/.test(document.location.toString())?'indexeddb':'file'),
+		'dbType':params.dbType || (/http/.test(document.location.toString())?'indexeddb':'file'),
 		'timeout':1000, // milliseconds
 		'version':0, // version parameter to send to server as _v
 		'updatesUrl':'', // URL of the API
@@ -38,20 +41,19 @@ function PhoneSync(params) {
 		'onDelete':function() { // called when a key is deleted
 		}
 	};
-	$.extend(this.options, params);
-	this.fs=false;
-	this.numberOfUploads=0;
-	this.allowDownloads=true; // don't allow downloads to happen while uploads are pending
-	this.disableFS=false;
-	this.filePutQueue=[];
-	this.fileGetQueue=[];
-	this.networkInUse=false;
-	this.loggedIn=false;
-	this.tables={};
-	this.cache={};
-	this.apiCalls=[];
-	this.tablesLastUpdateClear();
-	var that=this;
+	$.extend(PhoneSync_Instance.options, params);
+	PhoneSync_Instance.fs=false;
+	PhoneSync_Instance.numberOfUploads=0;
+	PhoneSync_Instance.allowDownloads=true; // don't allow downloads to happen while uploads are pending
+	PhoneSync_Instance.disableFS=false;
+	PhoneSync_Instance.filePutQueue=[];
+	PhoneSync_Instance.fileGetQueue=[];
+	PhoneSync_Instance.networkInUse=false;
+	PhoneSync_Instance.loggedIn=false;
+	PhoneSync_Instance.tables={};
+	PhoneSync_Instance.cache={};
+	PhoneSync_Instance.apiCalls=[];
+	PhoneSync_Instance.tablesLastUpdateClear();
 	Date.prototype.toYMD = function Date_toYMD() {
 		var year, month, day;
 		year = String(this.getFullYear());
@@ -65,32 +67,33 @@ function PhoneSync(params) {
 		}
 		return year + "-" + month + "-" + day;
 	};
-	if (this.options.dbType=='file') {
+	if (PhoneSync_Instance.options.dbType=='file') {
 		window.requestFileSystem(
 			LocalFileSystem.PERSISTENT, 0,
 			function(filesystem) {
+				console.log(filesystem);
 				var entry=filesystem.root;
-				entry.getDirectory(that.options.dbName,
+				entry.getDirectory(PhoneSync_Instance.options.dbName,
 					{'create':true, 'exclusive':false},
 					function(root) {
-						that.fs=root;
-						that.delaySyncDownloads();
-						that.delaySyncUploads();
-						that.get('_tables', function(ret) {
+						PhoneSync_Instance.fs=root;
+						PhoneSync_Instance.delaySyncDownloads();
+						PhoneSync_Instance.delaySyncUploads();
+						PhoneSync_Instance.get('_tables', function(ret) {
 							if (null === ret) {
 								return;
 							}
-							$.extend(that.tables, ret.obj);
+							$.extend(PhoneSync_Instance.tables, ret.obj);
 						});
-						that.get('_files', function(ret) {
+						PhoneSync_Instance.get('_files', function(ret) {
 							if (null === ret) {
-								that.save({
+								PhoneSync_Instance.save({
 									'key':'_files',
 									'files':{'_files':1}
 								}, null, true);
 							}
 						});
-						that.options.ready(that);
+						PhoneSync_Instance.options.ready(PhoneSync_Instance);
 						var dirReader=root.createReader();
 						dirReader.readEntries(function(entries) {
 							var files=[];
@@ -104,56 +107,58 @@ function PhoneSync(params) {
 							console.log('error starting index checker');
 							console.log(err);
 						});
+					},
+					function(err) {
+						console.log(err);
 					}
 				);
 			},
 			null
 		);
 	}
-	else if (this.options.dbType=='indexeddb') {
+	else if (PhoneSync_Instance.options.dbType=='indexeddb') {
 		try {
-			that.dbSetupIndexedDB();
+			PhoneSync_Instance.dbSetupIndexedDB();
 		}
 		catch (e) {
 			console.log(e);
 		}
 	}
 	else {
-		that.save({
+		PhoneSync_Instance.save({
 			'key':'_files',
 			'files':{'_files':1}
 		}, null, true);
 		setTimeout(function() {
-			that.options.ready(that);
+			PhoneSync_Instance.options.ready(PhoneSync_Instance);
 			$(document).trigger('online');
 		}, 1);
 	}
 	$(document).bind('online', function() {
-		that.delaySyncDownloads();
-		that.delaySyncUploads();
+		PhoneSync_Instance.delaySyncDownloads();
+		PhoneSync_Instance.delaySyncUploads();
 	});
 	setInterval(function() {
 		console.log('triggering uploads/downloads just in case');
-		that.delaySyncUploads();
-		that.delaySyncDownloads();
+		PhoneSync_Instance.delaySyncUploads();
+		PhoneSync_Instance.delaySyncDownloads();
 	}, 60000);
-}
+};
 PhoneSync.prototype.addToSyncUploads=function(key) {
-	var that=this;
-	this.get('_syncUploads', function(ret) {
+	PhoneSync_Instance.get('_syncUploads', function(ret) {
 		if (!ret || ret===undefined || ret.keys===undefined) {
 			ret={
 				'key':'_syncUploads',
 				'keys':[]
 			};
 		}
-		if (0 < $.inArray(key, ret.keys)) {
+		if (0 < $.inArray(key, ret.keys, 1)) {
 			return;
 		}
 		ret.keys.push(key);
-		that.save(ret, false, true);
+		PhoneSync_Instance.save(ret, false, true);
 	});
-	that.delaySyncUploads();
+	PhoneSync_Instance.delaySyncUploads();
 };
 PhoneSync.prototype.api=function(action, params, success, fail) {
 	var uid=0;
@@ -169,24 +174,24 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			params.PHPSESSID=credentials.session_id;
 		}
 	}
-	if (this.options.urls[action]===undefined) {
+	if (PhoneSync_Instance.options.urls[action]===undefined) {
 		console.log('no url defined for the action', action);
 		fail();
 		return;
 	}
-	var url=this.options.urls[action];
+	var url=PhoneSync_Instance.options.urls[action];
 	if ('syncDownloads' === action) {
 		var lastUpdates={};
-		$.each(this.tables, function(k, v) {
+		$.each(PhoneSync_Instance.tables, function(k, v) {
 			lastUpdates[k]='0000-00-00 00:00:00' === v.lastUpdate ? 0 : v.lastUpdate;
 		});
 		params._lastUpdates=lastUpdates;
 	}
-	if (this.options.version) {
-		params._v=this.options.version;
+	if (PhoneSync_Instance.options.version) {
+		params._v=PhoneSync_Instance.options.version;
 	}
 	params._uuid=(window.device&&device.uuid)?device.uuid:'no-uid|'+uid;
-	this.uuid=params._uuid;
+	PhoneSync_Instance.uuid=params._uuid;
 	function recursiveClean(obj) {
 		for (var prop in obj) {
 			if (obj.hasOwnProperty(prop)) {
@@ -218,78 +223,94 @@ PhoneSync.prototype.api=function(action, params, success, fail) {
 			console.log('ERROR: '+JSON.stringify(ret));
 		};
 	}
-	this.apiCalls.push([url, params, success, fail, action]);
-	this.apiNext();
+	PhoneSync_Instance.apiCalls.push([url, params, success, fail, action]);
+	PhoneSync_Instance.apiNext();
 };
 PhoneSync.prototype.apiAlreadyInQueue=function(name) {
-	for (var i=0;i<this.apiCalls.length;++i) {
-		if (this.apiCalls[i][4]===name) {
+	for (var i=0;i<PhoneSync_Instance.apiCalls.length;++i) {
+		if (PhoneSync_Instance.apiCalls[i][4]===name) {
 			return true;
 		}
 	}
 };
 PhoneSync.prototype.apiNext=function() {
-	var that=this;
 	if (navigator.connection.type===Connection.NONE) {
-		return that.delayApiNext(5000);
+		return PhoneSync_Instance.delayApiNext(5000);
 	}
 	clearTimeout(window.PhoneSync_timerApiCall);
-	if (!that.apiCalls.length) {
+	if (!PhoneSync_Instance.apiCalls.length) {
 		return;
 	}
-	if (that.networkInUse) {
-		if (that.networkInUse>(new Date)) {
-			return that.delayApiNext(1000);
+	if (PhoneSync_Instance.networkInUse) {
+		if (PhoneSync_Instance.networkInUse>(new Date())) {
+			return PhoneSync_Instance.delayApiNext(1000);
 		}
-		that.networkInUse=false;
-		return that.delayApiNext(1);
+		PhoneSync_Instance.networkInUse=false;
+		return PhoneSync_Instance.delayApiNext(1);
 	}
-	that.networkInUse=new Date;
-	that.networkInUse.setSeconds(that.networkInUse.getSeconds()+240); // block the network for the next 240 seconds
-	clearTimeout(window.PhoneSync_timersClearNetwork);
-	that.options.onBeforeNetwork();
+	PhoneSync_Instance.networkInUse=new Date();
+	PhoneSync_Instance.networkInUse.setSeconds(PhoneSync_Instance.networkInUse.getSeconds()+240); // block the network for the next 240 seconds
+	PhoneSync_Instance.options.onBeforeNetwork();
 	var call=false;
 	// { login/logout are priority
-	for (var i=0;i<that.apiCalls.length;++i) {
-		if (that.apiCalls[i][4]==='login' || that.apiCalls[i][4]==='logout') {
-			call=that.apiCalls[i];
-			that.apiCalls.splice(i, 1);
-			//noinspection BreakStatementJS
-		 break;
+	for (var i=0;i<PhoneSync_Instance.apiCalls.length;++i) {
+		if (PhoneSync_Instance.apiCalls[i][4]==='login' || PhoneSync_Instance.apiCalls[i][4]==='logout') {
+			call=PhoneSync_Instance.apiCalls[i];
+			PhoneSync_Instance.apiCalls.splice(i, 1);
+			break;
 		}
 	}
 	// }
-	if (!call) { // otherwise, uploads are priority
-		for (i=0;i<this.apiCalls.length;++i) {
-			if ('syncUploads' === this.apiCalls[i][4]) {
-				call=this.apiCalls[i];
-				this.apiCalls.splice(i, 1);
-				//noinspection BreakStatementJS
-			 break;
+	// { followed by uploads
+	if (!call) {
+		for (i=0;i<PhoneSync_Instance.apiCalls.length;++i) {
+			if ('syncUploads' === PhoneSync_Instance.apiCalls[i][4]) {
+				call=PhoneSync_Instance.apiCalls[i];
+				PhoneSync_Instance.apiCalls.splice(i, 1);
+				break;
 			}
 		}
 	}
-	if (!call) { // else, just pick the first in the list
-		call=this.apiCalls.shift();
+	// }
+	// { followed by downloadSome
+	if (!call) {
+		for (i=0;i<PhoneSync_Instance.apiCalls.length;++i) {
+			if ('syncDownloadSome' === PhoneSync_Instance.apiCalls[i][4]) {
+				call=PhoneSync_Instance.apiCalls[i];
+				PhoneSync_Instance.apiCalls.splice(i, 1);
+				break;
+			}
+		}
 	}
+	// }
+	// { followed by anything else
+	if (!call) {
+		call=PhoneSync_Instance.apiCalls.shift();
+	}
+	// }
 	var url=call[0], params=call[1], success=call[2], fail=call[3], action=call[4];
-	that.mostRecentApiCallType=action;
-	that.apiXHR=$.post(url, params)
+	if (window.device) {
+		params._platform=window.device.platform;
+		params._make=window.device.manufacturer;
+		params._model=window.device.model;
+	}
+	PhoneSync_Instance.mostRecentApiCallType=action;
+	PhoneSync_Instance.apiXHR=$.post(url, params)
 		.done(function(ret) {
-			that.options.onNetwork();
+			PhoneSync_Instance.options.onNetwork();
 			if (!ret) {
 				console.log('error while sending request', url, params, ret);
-				that.options.errorHandler({'err':'error while sending request'});
+				PhoneSync_Instance.options.errorHandler({'err':'error while sending request'});
 			}
 			else if (ret.error) {
 				console.log('ERROR: '+JSON.stringify(ret), url, params, ret);
-				if (that.options.errorHandler) {
-					that.options.errorHandler(ret);
+				if (PhoneSync_Instance.options.errorHandler) {
+					PhoneSync_Instance.options.errorHandler(ret);
 				}
 			}
 			else {
 				if (action==='login') {
-					that.loggedIn=true;
+					PhoneSync_Instance.loggedIn=true;
 				}
 				if (success) {
 					success(ret);
@@ -297,142 +318,134 @@ PhoneSync.prototype.apiNext=function() {
 			}
 		})
 		.fail(function(ret) {
-			that.apiCalls.push(call);
+			PhoneSync_Instance.apiCalls.push(call);
 			fail();
 		})
 		.always(function() {
-			that.networkInUse=false;
-			window.clearTimeout(window.PhoneSync_timersClearNetwork);
-			that.delayApiNext(1);
+			PhoneSync_Instance.networkInUse=false;
+			PhoneSync_Instance.delayApiNext(1);
 		});
 };
 PhoneSync.prototype.apiQueueClear=function(type) {
-	if (type===undefined || type=='') {
+	if (type===undefined || type==='') {
 		type='syncDownloads';
 	}
-	var that=this;
-	if (that.apiXHR) {
-		if (type=='all' || type==that.mostRecentApiCallType) {
-			that.apiXHR.abort();
+	
+	if (PhoneSync_Instance.apiXHR) {
+		if (type=='all' || type==PhoneSync_Instance.mostRecentApiCallType) {
+			PhoneSync_Instance.apiXHR.abort();
 		}
 	}
 	var arr=[];
-	for (var i=0;i<that.apiCalls.length;++i) {
-		if (type=='all' || type==that.apiCalls[i][4]) {
+	for (var i=0;i<PhoneSync_Instance.apiCalls.length;++i) {
+		if (type=='all' || type==PhoneSync_Instance.apiCalls[i][4]) {
 			continue;
 		}
-		arr.push(that.apiCalls[i]);
+		arr.push(PhoneSync_Instance.apiCalls[i]);
 	}
-	that.apiCalls=arr;
-	that.networkInUse=false;
-	that.inSyncDownloads=false;
-}
+	PhoneSync_Instance.apiCalls=arr;
+	PhoneSync_Instance.networkInUse=false;
+	PhoneSync_Instance.inSyncDownloads=false;
+};
 PhoneSync.prototype.dbSetupIndexedDB=function() {
-	var that=this, dbreq=window.indexedDB.open(that.options.dbName, 3);
+	var dbreq=window.indexedDB.open(PhoneSync_Instance.options.dbName, 3);
 	dbreq.onsuccess=function(ev) {
-		that.fs=ev.target.result;
-		that.delaySyncDownloads();
-		that.delaySyncUploads();
-		that.get('_tables', function(ret) {
+		PhoneSync_Instance.fs=ev.target.result;
+		PhoneSync_Instance.delaySyncDownloads();
+		PhoneSync_Instance.delaySyncUploads();
+		PhoneSync_Instance.get('_tables', function(ret) {
 			if (null === ret) {
 				return;
 			}
-			$.extend(that.tables, ret.obj);
+			$.extend(PhoneSync_Instance.tables, ret.obj);
 		});
-		that.get('_files', function(ret) {
+		PhoneSync_Instance.get('_files', function(ret) {
 			if (null === ret) {
-				that.save({
+				PhoneSync_Instance.save({
 					'key':'_files',
 					'files':{'_files':1}
 				}, null, true);
 			}
 		});
-		that.options.ready(that);
+		PhoneSync_Instance.options.ready(PhoneSync_Instance);
 	};
 	dbreq.onupgradeneeded=function(e) {
 		console.log('upgrading');
-		that.fs=e.target.result;
-		if (!that.fs.objectStoreNames.contains(that.options.dbName)) {
-			that.fs.createObjectStore(that.options.dbName);
+		PhoneSync_Instance.fs=e.target.result;
+		if (!PhoneSync_Instance.fs.objectStoreNames.contains(PhoneSync_Instance.options.dbName)) {
+			PhoneSync_Instance.fs.createObjectStore(PhoneSync_Instance.options.dbName);
 		}
-	}
-}
+	};
+};
 PhoneSync.prototype.delayAllowDownloads=function() {
-	var that=this;
-	that.allowDownloads=false;
+	PhoneSync_Instance.allowDownloads=false;
 	window.clearTimeout(window.PhoneSync_timerAllowDownloads);
-	window.PhoneSync_timerAllowDownloads=window.setTimeout(function() {
-		that.get('_syncUploads', function(obj) {
-			if (!obj || obj===undefined || obj.keys.length==0) { // nothing to upload
-				that.allowDownloads=true;
+	PhoneSync_timerAllowDownloads=window.setTimeout(function() {
+		PhoneSync_Instance.get('_syncUploads', function(obj) {
+			if (!obj || obj===undefined || obj.keys===undefined || obj.keys.length===0) { // nothing to upload
+				PhoneSync_Instance.allowDownloads=true;
 			}
 			else {
-				that.delayAllowDownloads();
+				PhoneSync_Instance.delayAllowDownloads();
 			}
 		});
-	}, that.options.timeout);
-}
+	}, PhoneSync_Instance.options.timeout);
+};
 PhoneSync.prototype.delayApiNext=function(delay) {
-	var that=this;
 	window.clearTimeout(window.PhoneSync_timerApiCall);
-	window.PhoneSync_timerApiCall=window.setTimeout(function() {
-		that.apiNext();
+	PhoneSync_timerApiCall=window.setTimeout(function() {
+		PhoneSync_Instance.apiNext();
 	}, delay||1000);
 };
 PhoneSync.prototype.delayFilePutJSON=function(delay) {
-	var that=this;
 	window.clearTimeout(window.PhoneSync_timerFilePutQueue);
-	window.PhoneSync_timerFilePutQueue=window.setTimeout(function() {
-		that.filePutJSON();
-	}, delay||that.options.timeout);
+	PhoneSync_timerFilePutQueue=window.setTimeout(function() {
+		PhoneSync_Instance.filePutJSON();
+	}, delay||PhoneSync_Instance.options.timeout);
 };
 PhoneSync.prototype.delayIdxPutJSON=function(delay) {
-	var that=this;
 	window.clearTimeout(window.PhoneSync_timerIdxPutQueue);
-	window.PhoneSync_timerIdxPutQueue=window.setTimeout(function() {
-		that.idxPutJSON();
-	}, delay||that.options.timeout);
+	PhoneSync_timerIdxPutQueue=window.setTimeout(function() {
+		PhoneSync_Instance.idxPutJSON();
+	}, delay||PhoneSync_Instance.options.timeout);
 };
 PhoneSync.prototype.delaySyncDownloads=function(delay) {
-	var that=this;
-	delay=delay||that.options.timeout;
+	delay=delay||PhoneSync_Instance.options.timeout;
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
-	window.PhoneSync_timerSyncDownloads=setTimeout(function() {
-		that.syncDownloads();
+	PhoneSync_timerSyncDownloads=setTimeout(function() {
+		PhoneSync_Instance.syncDownloads();
 	}, delay);
-}
+};
 PhoneSync.prototype.delaySyncUploads=function(delay) {
-	var that=this;
 	window.clearTimeout(window.PhoneSync_timerSyncUploads);
-	window.PhoneSync_timerSyncUploads=setTimeout(function() {
-		that.syncUploads();
-	}, delay||that.options.timeout);
+	PhoneSync_timerSyncUploads=setTimeout(function() {
+		PhoneSync_Instance.syncUploads();
+	}, delay||PhoneSync_Instance.options.timeout);
 };
 PhoneSync.prototype.delete=function(key, callback) {
-	var that=this;
-	if (this.disableFS) {
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	delete this.cache[key];
+	delete PhoneSync_Instance.cache[key];
 	if (/-/.test(key)) {
-		this.idDel(key.replace(/-[^-]*$/, ''), key.replace(/.*-/, ''));
+		PhoneSync_Instance.idDel(key.replace(/-[^-]*$/, ''), key.replace(/.*-/, ''));
 	}
 	if (callback) {
 		callback();
 	}
-	if ('indexeddb' === that.options.dbType) {
-		var txn=that.fs.transaction([that.options.dbName], 'readwrite');
+	if ('indexeddb' === PhoneSync_Instance.options.dbType) {
+		var txn=PhoneSync_Instance.fs.transaction([PhoneSync_Instance.options.dbName], 'readwrite');
 		if (txn) {
-			var store=txn.objectStore(that.options.dbName);
+			var store=txn.objectStore(PhoneSync_Instance.options.dbName);
 			store.delete(key);
 			store.onsuccess=function(ev) {
-				that.get('_files', function(ret) {
+				PhoneSync_Instance.get('_files', function(ret) {
 					if (ret===null) {
 						return;
 					}
 					if (ret.files[key]) {
 						delete ret.files[key];
-						that.save(ret, null, true);
+						PhoneSync_Instance.save(ret, null, true);
 					}
 				});
 			};
@@ -441,57 +454,68 @@ PhoneSync.prototype.delete=function(key, callback) {
 			console.log('could not open indexeddb transaction');
 		}
 	}
-	else if ('files' === that.options.dbType) {
-		that.fs.getFile(key, {create: false, exclusive: false}, function(file) {
+	else if ('files' === PhoneSync_Instance.options.dbType) {
+		PhoneSync_Instance.fs.getFile(key, {create: false, exclusive: false}, function(file) {
 			file.remove();
-			that.get('_files', function(ret) {
+			PhoneSync_Instance.get('_files', function(ret) {
 				if (ret===null) {
 					return;
 				}
 				if (ret.files[key]) {
 					delete ret.files[key];
-					that.save(ret, null, true);
+					PhoneSync_Instance.save(ret, null, true);
 				}
 			});
 		});
 	}
 	else {
-		that.get('_files', function(ret) {
+		PhoneSync_Instance.get('_files', function(ret) {
 			if (ret===null) {
 				return;
 			}
 			if (ret.files[key]) {
 				delete ret.files[key];
-				that.save(ret);
+				PhoneSync_Instance.save(ret, null, true);
 			}
 		});
 	}
-	this.options.onDelete(key);
+	PhoneSync_Instance.options.onDelete(key);
 };
 PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
-	var that=this;
-	if (this.disableFS) {
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	if (!this.fs) {
+	if (!PhoneSync_Instance.fs || PhoneSync_Instance.fileLock) {
 		return window.setTimeout(function() {
-			that.fileGetJSON(name, success, fail);
-		}, that.options.timeout);
+			PhoneSync_Instance.fileGetJSON(name, success, fail);
+		}, PhoneSync_Instance.options.timeout);
 	}
-	this.fs.getFile(this.sanitise(name), {'create':false, 'exclusive':false},
+	PhoneSync_Instance.fs.getFile(PhoneSync_Instance.sanitise(name), {'create':false, 'exclusive':false},
 		function(entry) {
 			entry.file(
 				function(file) {
 					var reader=new FileReader();
+					PhoneSync_Instance.fileLock=true;
 					reader.onloadend=function(evt) {
+						PhoneSync_Instance.fileLock=false;
 						if (evt.target.result) {
-							success(JSON.parse(
-								evt.target.result
-									.replace(/,\\*"[^"]*":\[\]/, '')
-									.replace(/\\*"[^"]*":\[\],/, '')
-									.replace(/[\u2018\u2019]/g, "'")
-									.replace(/[\u201C\u201D]/g, '\\"')
-							));
+							var res=evt.target.result, obj;
+							var res2=res
+								.replace(/,\\*"[^"]*":\[\]/, '')
+								.replace(/\\*"[^"]*":\[\],/, '')
+								.replace(/[\u2018\u2019]/g, "'")
+								.replace(/[\u201C\u201D]/g, '\\"');
+							try{
+								obj=JSON.parse(res);
+							}
+							catch (e) {
+								console.warn('failed to decode file! will try again in a moment');
+								console.warn(e, res);
+								return setTimeout(function() {
+									PhoneSync.prototype.fileGetJSON(name, success, fail);
+								}, 2000);
+							}
+							success(obj);
 						}
 						else {
 							fail();
@@ -505,47 +529,47 @@ PhoneSync.prototype.fileGetJSON=function(name, success, fail) {
 		fail
 	);
 };
-PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
-	var that=this;
-	if (that.disableFS || 'none'===that.options.dbType) {
-		return callback?callback():0;
+PhoneSync.prototype.filePutJSON=function(name, obj) {
+	var f;
+	if (PhoneSync_Instance.disableFS || 'none'===PhoneSync_Instance.options.dbType) {
+		return PhoneSync_Instance.options.onSave?PhoneSync_Instance.options.onSave(name, obj):0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
-		for (var i=1;i<that.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
-			var f=that.filePutQueue[i];
+		for (var i=1;i<PhoneSync_Instance.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
+			f=PhoneSync_Instance.filePutQueue[i];
 			if (f[0]===name) {
-				that.filePutQueue.splice(i, 1);
-				//noinspection BreakStatementJS
+				PhoneSync_Instance.filePutQueue.splice(i, 1);
 			 break;
 			}
 		}
-		that.filePutQueue.push([name, obj, callback]);
-		return that.delayFilePutJSON(1);
+		PhoneSync_Instance.filePutQueue.push([name, obj]);
+		return PhoneSync_Instance.delayFilePutJSON(1);
 	}
 	// }
 	// { if a file is currently being written, then come back later
-	if (that.filePutJSONLock) {
-		return that.delayFilePutJSON(1);
+	if (PhoneSync_Instance.fileLock) {
+		return PhoneSync_Instance.delayFilePutJSON(1);
 	}
 	// }
 	// { write a file
-	that.filePutJSONLock=true;
-	var o=that.filePutQueue.shift();
-	if (o) {
-		name=o[0];
-		obj=o[1];
-		callback=o[2];
+	PhoneSync_Instance.fileLock=true;
+	PhoneSync_Instance.currentFilePutFile=PhoneSync_Instance.filePutQueue.shift();
+	if (PhoneSync_Instance.currentFilePutFile) {
+		name=PhoneSync_Instance.currentFilePutFile[0];
+		obj=PhoneSync_Instance.currentFilePutFile[1];
 		var json=JSON.stringify(obj);
-		that.fs.getFile(that.sanitise(name), {'create':true, 'exclusive':false},
+		PhoneSync_Instance.fs.getFile(PhoneSync_Instance.sanitise(name), {'create':true, 'exclusive':false},
 			function(entry) {
-				entry.createWriter(function(writer) {
+				entry.createWriter(
+					function(writer) {
 						writer.onwriteend=function() {
-							if (callback) {
-								callback();
+							delete PhoneSync_Instance.currentFilePutFile;
+							if (PhoneSync_Instance.options.onSave) {
+								PhoneSync_Instance.options.onSave(name, obj);
 							}
 							if (name!=='_files') {
-								that.get('_files', function(ret) {
+								PhoneSync_Instance.get('_files', function(ret) {
 									if (ret===null) {
 										ret={
 											'key':'_files',
@@ -554,44 +578,91 @@ PhoneSync.prototype.filePutJSON=function(name, obj, callback) {
 									}
 									if (ret.files[name]===undefined) {
 										ret.files[name]=1;
-										that.save(ret, null, true);
+										PhoneSync_Instance.save(ret, null, true);
 									}
 								});
 							}
-							that.filePutJSONLock=false;
-							if (that.filePutQueue.length) {
-								that.delayFilePutJSON(1);
+							PhoneSync_Instance.fileLock=false;
+							if (PhoneSync_Instance.filePutQueue.length) {
+								PhoneSync_Instance.delayFilePutJSON(1);
 							}
 						};
 						writer.write(json);
 					},
 					function(err) { // failed to create writer
 						console.log('ERROR', 'failed to create writer', err);
-						that.filePutQueue.unshift(o);
-						that.delayFilePutJSON();
-					});
+						PhoneSync_Instance.filePutQueue.unshift(PhoneSync_Instance.currentFilePutFile);
+						delete PhoneSync_Instance.currentFilePutFile;
+						delete PhoneSync_Instance.fileLock;
+						PhoneSync_Instance.delayFilePutJSON();
+					}
+				);
+			},
+			function(err) {
+				console.error('failed to write file ', name);
+				console.error(err);
+				PhoneSync_Instance.filePutQueue.unshift(PhoneSync_Instance.currentFilePutFile);
+				delete PhoneSync_Instance.currentFilePutFile;
+				delete PhoneSync_Instance.fileLock;
+				PhoneSync_Instance.delayFilePutJSON();
 			}
 		);
 	}
 	else {
-		if (that.filePutQueue.length) {
-			that.delayFilePutJSON(1);
+		if (PhoneSync_Instance.filePutQueue.length) {
+			PhoneSync_Instance.delayFilePutJSON(1);
 		}
 	}
 	// }
 };
 PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 	if (!callback) {
-		callback=function() {};
+		callback=function(ret) {
+			console.log('PhoneSync', ret);
+		}
 	}
 	function doTheGet(rekeys) {
+		function delayGet(key, callback, download) {
+			return setTimeout(function() {
+				PhoneSync_Instance.get(key, callback, download);
+			}, 1);
+		}
+		function fail2() {
+			if (download) {
+				if (PhoneSync_Instance.inSyncDownloads) {
+					PhoneSync_Instance.inSyncDownloads=false;
+					PhoneSync_Instance.networkInUse=false;
+					PhoneSync_Instance.apiXHR.abort();
+				}
+				console.log('downloading '+key);
+				PhoneSync_Instance.api('syncDownloadOne', {
+					'key':key
+				}, function(ret) {
+					var obj={
+						'key':key,
+						'obj':ret
+					};
+					if (PhoneSync_Instance.options.onDownload(key, obj, callback)!==false) {
+						PhoneSync_Instance.save(obj, callback, true);
+					};
+				}, fail, function() {
+					console.log('offline - cannot download missing resource: '+key);
+				});
+			}
+			else {
+				fail();
+			}
+		}
 		if (!(undefined===rekeys || null === rekeys) && rekeys.changes && rekeys.changes[key]) {
 			key=rekeys.changes[key];
 		}
-		if (that.cache._files) {
-			if (that.cache._files.files[key]===undefined && (undefined===download || !download)) {
+		if (PhoneSync_Instance.cache._files) {
+			if (PhoneSync_Instance.cache._files.files===undefined) {
+				PhoneSync_Instance.cache._files.files={};
+			}
+			if (PhoneSync_Instance.cache._files.files[key]===undefined && (undefined===download || !download)) {
 				if ('_rekeys' === key) {
-					var rekeys={
+					rekeys={
 						'key':'_rekeys',
 						'changes':{}
 					};
@@ -602,44 +673,42 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 				return fail();
 			}
 		}
-		for (var i=0;i<that.fileGetQueue.length;++i) {
-			if (that.fileGetQueue[i]===key) {
-				//noinspection JSHint
-				return setTimeout(function() {
-					that.get(key, callback, download);
-				}, 1);
+		for (var i=0;i<PhoneSync_Instance.fileGetQueue.length;++i) {
+			if (PhoneSync_Instance.fileGetQueue[i]===key) {
+				return delayGet(key, callback, download);
 			}
 		}
-		that.fileGetQueue.push(key);
-		if (that.options.dbType=='file') {
-			that.fileGetJSON(key,
+		PhoneSync_Instance.fileGetQueue.push(key);
+		if (PhoneSync_Instance.options.dbType=='file') {
+			PhoneSync_Instance.fileGetJSON(key,
 				function(obj) {
 					var arr=[];
-					for (var i=0;i<that.fileGetQueue.length;++i) {
-						if (that.fileGetQueue[i]!==key) {
-							arr.push(that.fileGetQueue[i]);
+					for (var i=0;i<PhoneSync_Instance.fileGetQueue.length;++i) {
+						if (PhoneSync_Instance.fileGetQueue[i]!==key) {
+							arr.push(PhoneSync_Instance.fileGetQueue[i]);
 						}
 					}
-					that.fileGetQueue=arr;
-					that.cache[key]=obj;
+					PhoneSync_Instance.fileGetQueue=arr;
+					PhoneSync_Instance.cache[key]=obj;
 					callback($.extend({}, obj));
 				},
 				function() {
 					if (download) {
-						if (that.inSyncDownloads) {
-							that.inSyncDownloads=false;
-							that.networkInUse=false;
-							that.apiXHR.abort();
+						if (PhoneSync_Instance.inSyncDownloads) {
+							PhoneSync_Instance.inSyncDownloads=false;
+							PhoneSync_Instance.networkInUse=false;
+							PhoneSync_Instance.apiXHR.abort();
 						}
-						that.api('syncDownloadOne', {
+						PhoneSync_Instance.api('syncDownloadOne', {
 							'key':key
 						}, function(ret) {
 							var obj={
 								'key':key,
 								'obj':ret
 							};
-							that.save(obj);
-							callback(obj);
+							if (PhoneSync_Instance.options.onDownload(key, obj, callback)!==false) {
+								PhoneSync_Instance.save(obj, callback, true);
+							}
 						}, fail, function() {
 							console.log('offline - cannot download missing resource: '+key);
 						});
@@ -650,45 +719,21 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 				}
 			);
 		}
-		else if (that.options.dbType=='indexeddb') {
-			function fail2() {
-				if (download) {
-					if (that.inSyncDownloads) {
-						that.inSyncDownloads=false;
-						that.networkInUse=false;
-						that.apiXHR.abort();
-					}
-					that.api('syncDownloadOne', {
-						'key':key
-					}, function(ret) {
-						var obj={
-							'key':key,
-							'obj':ret
-						};
-						that.save(obj);
-						callback(obj);
-					}, fail, function() {
-						console.log('offline - cannot download missing resource: '+key);
-					});
-				}
-				else {
-					fail();
-				}
-			}
-			that.idxGetJSON(
+		else if (PhoneSync_Instance.options.dbType=='indexeddb') {
+			PhoneSync_Instance.idxGetJSON(
 				key,
 				function(obj) {
 					if (obj===undefined) {
 						return fail2();
 					}
 					var arr=[];
-					for (var i=0;i<that.fileGetQueue.length;++i) {
-						if (that.fileGetQueue[i]!==key) {
-							arr.push(that.fileGetQueue[i]);
+					for (var i=0;i<PhoneSync_Instance.fileGetQueue.length;++i) {
+						if (PhoneSync_Instance.fileGetQueue[i]!==key) {
+							arr.push(PhoneSync_Instance.fileGetQueue[i]);
 						}
 					}
-					that.fileGetQueue=arr;
-					that.cache[key]=obj;
+					PhoneSync_Instance.fileGetQueue=arr;
+					PhoneSync_Instance.cache[key]=obj;
 					callback($.extend({}, obj));
 				},
 				fail2
@@ -700,28 +745,28 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 			failcallback();
 		}
 		var arr=[];
-		for (var i=0;i<that.fileGetQueue.length;++i) {
-			if (that.fileGetQueue[i]!==key) {
-				arr.push(that.fileGetQueue[i]);
+		for (var i=0;i<PhoneSync_Instance.fileGetQueue.length;++i) {
+			if (PhoneSync_Instance.fileGetQueue[i]!==key) {
+				arr.push(PhoneSync_Instance.fileGetQueue[i]);
 			}
 		}
-		that.fileGetQueue=arr;
+		PhoneSync_Instance.fileGetQueue=arr;
 		callback(null);
 	}
-	var that=this;
-	if (this.disableFS) {
+	
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	if (this.cache[key]) {
-		if (!(this.cache[key]===null && download)) {
-			return callback($.extend({}, this.cache[key]));
+	if (PhoneSync_Instance.cache[key]) {
+		if (!(PhoneSync_Instance.cache[key]===null && download)) {
+			return callback($.extend({}, PhoneSync_Instance.cache[key]));
 		}
 	}
 	if ('_rekeys' === key) {
 		doTheGet(null);
 	}
 	else {
-		that.get('_rekeys', doTheGet, false, function() {
+		PhoneSync_Instance.get('_rekeys', doTheGet, false, function() {
 			obj={
 				'key':'_rekeys',
 				'changes':{}
@@ -731,20 +776,24 @@ PhoneSync.prototype.get=function(key, callback, download, failcallback) {
 	}
 };
 PhoneSync.prototype.getAll=function(key, callback) {
-	var that=this;
-	if (this.disableFS) {
+	if (!callback) {
+		callback=function(ret) {
+			console.log('PhoneSync: '+ret);
+		}
+	}
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
 	var keys=[];
-	if (this.cache[key]) {
-		keys=this.cache[key].obj;
+	if (PhoneSync_Instance.cache[key]) {
+		keys=PhoneSync_Instance.cache[key].obj;
 	}
 	else {
-		this.get(key, function(ret) {
+		PhoneSync_Instance.get(key, function(ret) {
 			if (ret===undefined || ret===null) {
 				return callback([]);
 			}
-			that.getAll(key, callback);
+			PhoneSync_Instance.getAll(key, callback);
 		});
 		return;
 	}
@@ -758,15 +807,15 @@ PhoneSync.prototype.getAll=function(key, callback) {
 		}
 	}
 	for (var i=0;i<keys.length;++i) {
-		this.get(key+'-'+keys[i], getObject);
+		PhoneSync_Instance.get(key+'-'+keys[i], getObject);
 	}
 };
 PhoneSync.prototype.getAllById=function(keys, callback) {
-	if (this.disableFS) {
-		return;
+	if (!callback) {
+		callback=function(ret) {
+			console.log('PhoneSync: '+ret);
+		}
 	}
-	var rows=[];
-	var toGet=keys.length;
 	function getObject(ret) {
 		if (ret!==null) {
 			rows.push($.extend({}, ret));
@@ -776,32 +825,41 @@ PhoneSync.prototype.getAllById=function(keys, callback) {
 			callback(rows);
 		}
 	}
-	for (var i=0;i<keys.length;++i) {
-		this.get(keys[i], getObject);
+	if (PhoneSync_Instance.disableFS) {
+		return;
+	}
+	var rows=[], toGet=keys.length, i=0;
+	for (;i<keys.length;++i) {
+		PhoneSync_Instance.get(keys[i], getObject);
 	}
 };
 PhoneSync.prototype.getSome=function(keys, callback) {
-	var toGet=keys.length, vals=[];
-	for (var i=0;i<keys.length;++i) {
-		lch.get(keys[i], function(ret) {
-			vals.push(ret);
-			toGet--;
-			if (!toGet) {
-				callback(vals);
-			}
-		});
+	if (!callback) {
+		callback=function(ret) {
+			console.log('PhoneSync', ret);
+		}
 	}
-}
+	var toGet=keys.length, vals=[];
+	function gather(ret) {
+		vals.push(ret);
+		toGet--;
+		if (!toGet) {
+			callback(vals);
+		}
+	}
+	for (var i=0;i<keys.length;++i) {
+		lch.get(keys[i], gather);
+	}
+};
 PhoneSync.prototype.idAdd=function(name, id, callback) {
-	var that=this;
 	id=''+id;
-	this.get(name, function(ret) {
+	PhoneSync_Instance.get(name, function(ret) {
 		if (!ret || !ret.obj) {
 			ret={'obj':[]};
 		}
 		if ($.inArray(id, ret.obj)===-1) {
 			ret.obj.push(id);
-			that.save({
+			PhoneSync_Instance.save({
 				'key':name,
 				'obj':ret.obj,
 				'id':id // added to let recursive idAdd work
@@ -815,9 +873,8 @@ PhoneSync.prototype.idAdd=function(name, id, callback) {
 	});
 };
 PhoneSync.prototype.idDel=function(name, id) {
-	var that=this;
 	id=''+id;
-	this.get(name, function(ret) {
+	PhoneSync_Instance.get(name, function(ret) {
 		ret=ret||{'obj':[]};
 		var arr=[];
 		if (ret.obj) {
@@ -827,58 +884,55 @@ PhoneSync.prototype.idDel=function(name, id) {
 				}
 			}
 		}
-		that.save({
+		PhoneSync_Instance.save({
 			'key':name,
 			'obj':arr,
 			'id':id // added to let recursive idAdd work
 		}, false, true);
 	});
 };
-PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
-	var that=this;
-	if (that.disableFS || 'none'===that.options.dbType) {
-		return callback?callback():0;
+PhoneSync.prototype.idxPutJSON=function(name, obj) {
+	
+	if (PhoneSync_Instance.disableFS || 'none'===PhoneSync_Instance.options.dbType) {
+		return PhoneSync_Instance.options.onSave?PhoneSync_Instance.options.onSave(name, obj):0;
 	}
 	// { if a file is submitted, queue it and come back later
 	if (name && obj) {
-		for (var i=1;i<that.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
-			var f=that.filePutQueue[i];
+		for (var i=1;i<PhoneSync_Instance.filePutQueue.length;++i) { // if the file is already in the queue, remove the old copy as it is out of date
+			var f=PhoneSync_Instance.filePutQueue[i];
 			if (f[0]===name) {
-				that.filePutQueue.splice(i, 1);
-				//noinspection BreakStatementJS
+				PhoneSync_Instance.filePutQueue.splice(i, 1);
 			 break;
 			}
 		}
-		that.filePutQueue.push([name, obj, callback]);
-		return that.delayIdxPutJSON(1);
+		PhoneSync_Instance.filePutQueue.push([name, obj]);
+		return PhoneSync_Instance.delayIdxPutJSON(1);
 	}
 	// }
 	// { if a file is currently being written, then come back later
-	if (that.idxPutJSONLock) {
-		return that.delayIdxPutJSON(1);
+	if (PhoneSync_Instance.idxPutJSONLock) {
+		return PhoneSync_Instance.delayIdxPutJSON(1);
 	}
 	// }
 	// { write a file
-	that.idxPutJSONLock=true;
-	var o=that.filePutQueue.shift();
+	PhoneSync_Instance.idxPutJSONLock=true;
+	var o=PhoneSync_Instance.filePutQueue.shift();
 	if (o) {
 		name=o[0];
 		obj=o[1];
-		callback=o[2];
-
-		var txn=that.fs.transaction([that.options.dbName], 'readwrite');
-		var store=txn.objectStore(that.options.dbName);
+		var txn=PhoneSync_Instance.fs.transaction([PhoneSync_Instance.options.dbName], 'readwrite');
+		var store=txn.objectStore(PhoneSync_Instance.options.dbName);
 		txn.onerror=function(e) {
 			console.log('ERROR', 'failed to create file', e);
-			that.filePutQueue.unshift(o);
-			that.delayIdxPutJSON();
-		}
+			PhoneSync_Instance.filePutQueue.unshift(o);
+			PhoneSync_Instance.delayIdxPutJSON();
+		};
 		txn.oncomplete=function() {
-			if (callback) {
-				callback();
+			if (PhoneSync_Instance.options.onSave) {
+				PhoneSync_Instance.options.onSave(name, obj);
 			}
 			if (name!=='_files') {
-				that.get('_files', function(ret) {
+				PhoneSync_Instance.get('_files', function(ret) {
 					if (ret===null || ret.files===undefined) {
 						ret={
 							'key':'_files',
@@ -888,38 +942,37 @@ PhoneSync.prototype.idxPutJSON=function(name, obj, callback) {
 					if (ret.files[name]===undefined) {
 						ret.files[name]=1;
 						setZeroTimeout(function() {
-							that.save(ret, null, true);
+							PhoneSync_Instance.save(ret, null, true);
 						});
 					}
 				});
 			}
-			that.idxPutJSONLock=false;
-			if (that.filePutQueue.length) {
-				that.delayIdxPutJSON(1);
+			PhoneSync_Instance.idxPutJSONLock=false;
+			if (PhoneSync_Instance.filePutQueue.length) {
+				PhoneSync_Instance.delayIdxPutJSON(1);
 			}
-		}
+		};
 		store.put(obj, name);
 	}
 	else {
-		if (that.filePutQueue.length) {
-			that.delayIdxPutJSON(1);
+		if (PhoneSync_Instance.filePutQueue.length) {
+			PhoneSync_Instance.delayIdxPutJSON(1);
 		}
 	}
 	// }
 };
 PhoneSync.prototype.idxGetJSON=function(name, success, fail) {
-	var that=this;
-	if (this.disableFS) {
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	if (!this.fs) {
+	if (!PhoneSync_Instance.fs) {
 		return window.setTimeout(function() {
-			that.idxGetJSON(name, success, fail);
-		}, that.options.timeout);
+			PhoneSync_Instance.idxGetJSON(name, success, fail);
+		}, PhoneSync_Instance.options.timeout);
 	}
-	var txn=that.fs.transaction([that.options.dbName]);
+	var txn=PhoneSync_Instance.fs.transaction([PhoneSync_Instance.options.dbName]);
 	if (txn) {
-		var store=txn.objectStore(that.options.dbName);
+		var store=txn.objectStore(PhoneSync_Instance.options.dbName);
 		var ob=store.get(name);
 		ob.onsuccess=function(ev) {
 			if (ob.result===undefined) {
@@ -929,18 +982,17 @@ PhoneSync.prototype.idxGetJSON=function(name, success, fail) {
 		};
 		ob.fail=function() {
 			fail();
-		}
+		};
 	}
 	else {
 		console.log('could not open indexeddb transaction');
 	}
 };
 PhoneSync.prototype.nuke=function(callback) {
-	var that=this;
-	if (that.options.dbType=='file') {
-		that.disableFS=true;
+	if (PhoneSync_Instance.options.dbType=='file') {
+		PhoneSync_Instance.disableFS=true;
 		try {
-			that.fs.removeRecursively(function() {
+			PhoneSync_Instance.fs.removeRecursively(function() {
 				console.log('successfully nuked. rebuilding now.');
 				window.requestFileSystem(
 					LocalFileSystem.PERSISTENT, 0,
@@ -948,23 +1000,23 @@ PhoneSync.prototype.nuke=function(callback) {
 						var entry=filesystem.root;
 						function createRoot() {
 							entry.getDirectory(
-								that.options.dbName,
+								PhoneSync_Instance.options.dbName,
 								{'create':true, 'exclusive':false},
 								function(root) {
-									that.fs=root;
-									that.disableFS=false;
-									that.delaySyncDownloads();
-									that.delaySyncUploads();
-									that.options.ready(that);
-									for (var i in that.tables) {
-										that.tables[i].lastUpdate='0000-00-00 00:00:00';
+									PhoneSync_Instance.fs=root;
+									PhoneSync_Instance.disableFS=false;
+									PhoneSync_Instance.delaySyncDownloads();
+									PhoneSync_Instance.delaySyncUploads();
+									PhoneSync_Instance.options.ready(PhoneSync_Instance);
+									for (var i in PhoneSync_Instance.tables) {
+										PhoneSync_Instance.tables[i].lastUpdate='0000-00-00 00:00:00';
 									}
-									that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
+									PhoneSync_Instance.save( { 'key':'_tables', 'obj':PhoneSync_Instance.tables }, false, true);
 									callback();
 								},
 								function(e) {
 									console.log(e);
-									setTimeout(createRoot, that.options.timeout);
+									setTimeout(createRoot, PhoneSync_Instance.options.timeout);
 								}
 							);
 						}
@@ -980,13 +1032,13 @@ PhoneSync.prototype.nuke=function(callback) {
 			console.log(e);
 		}
 	}
-	else if (that.options.dbType=='indexeddb') {
-		that.disableFS=true;
+	else if (PhoneSync_Instance.options.dbType=='indexeddb') {
+		PhoneSync_Instance.disableFS=true;
 		console.log('okay - about to request the deletion');
-		var req=indexedDB.deleteDatabase(that.options.dbName);
+		var req=indexedDB.deleteDatabase(PhoneSync_Instance.options.dbName);
 		req.onerror=function() {
 			console.log('failed to nuke');
-		}
+		};
 		if (callback) {
 			callback();
 		}
@@ -996,16 +1048,15 @@ PhoneSync.prototype.nuke=function(callback) {
 			callback();
 		}
 	}
-	that.tablesLastUpdateClear();
-	that.alreadyDoingSyncUpload=0;
-	that.cache={};
+	PhoneSync_Instance.tablesLastUpdateClear();
+	PhoneSync_Instance.alreadyDoingSyncUpload=0;
+	PhoneSync_Instance.cache={};
 };
 PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
-	var that=this;
 	if (oldId==newId) {
 		return;
 	}
-	this.get('_rekeys', function(obj) {
+	PhoneSync_Instance.get('_rekeys', function(obj) {
 		if (null === obj) {
 			obj={
 				'key':'_rekeys',
@@ -1015,40 +1066,44 @@ PhoneSync.prototype.rekey=function(table, oldId, newId, callback) {
 		obj.changes[table+'-'+oldId]=table+'-'+newId;
 		lch.save(obj, null, true);
 	});
-	this.get(table+'-'+oldId, function(obj) {
-		obj.key=table+'-'+newId;
-		obj.obj.id=newId;
-		that.save(obj, callback, true);
-		that.delete(table+'-'+oldId);
+	PhoneSync_Instance.get(table+'-'+oldId, function(obj) {
+ 		if (obj===null) { // temporary failure?
+ 			console.warn('re-attempting to rekey '+table+'-'+oldId+' to '+newId);
+ 			setTimeout(function() {
+ 				PhoneSync_Instance.rekey(table, oldId, newId, callback);
+ 			}, 1000);
+ 		}
+ 		else {
+ 			obj.key=table+'-'+newId;
+ 			obj.obj.id=newId;
+ 			PhoneSync_Instance.save(obj, callback, true);
+ 			PhoneSync_Instance.delete(table+'-'+oldId);
+ 		}
 	});
 };
 PhoneSync.prototype.sanitise=function(name) {
 	return name.replace(/[^a-zA-Z0-9\-]/g, '');
 };
 PhoneSync.prototype.save=function(obj, callback, nosync) {
-	var that=this;
-	that.options.onBeforeSave(obj.key, obj);
-	function onSave() {
-		that.options.onSave(obj.key, obj);
-	}
-	if (that.disableFS) {
+	PhoneSync_Instance.options.onBeforeSave(obj.key, obj);
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	that.cache[obj.key]=obj;
+	PhoneSync_Instance.cache[obj.key]=obj;
 	var id=obj.obj && obj.obj.id ? obj.obj.id : obj.id;
 	if (/-/.test(obj.key) && id) {
-		that.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
+		PhoneSync_Instance.idAdd(obj.key.replace(/-[^-]*$/, ''), id, function() {
 			if (callback) {
 				setZeroTimeout(callback);
 			}
 			if (!(nosync || /^_/.test(obj.key))) {
-				that.addToSyncUploads(obj.key);
+				PhoneSync_Instance.addToSyncUploads(obj.key);
 			}
-			if (that.options.dbType=='file') {
-				that.filePutJSON(obj.key, obj, onSave);
+			if (PhoneSync_Instance.options.dbType=='file') {
+				PhoneSync_Instance.filePutJSON(obj.key, obj);
 			}
-			else if (that.options.dbType=='indexeddb') {
-				that.idxPutJSON(obj.key, obj, onSave);
+			else if (PhoneSync_Instance.options.dbType=='indexeddb') {
+				PhoneSync_Instance.idxPutJSON(obj.key, obj);
 			}
 		});
 	}
@@ -1057,34 +1112,33 @@ PhoneSync.prototype.save=function(obj, callback, nosync) {
 			setZeroTimeout(callback);
 		}
 		if (!nosync) {
-			that.addToSyncUploads(obj.key);
+			PhoneSync_Instance.addToSyncUploads(obj.key);
 		}
-		if (that.options.dbType=='file') {
-			that.filePutJSON(obj.key, obj, onSave);
+		if (PhoneSync_Instance.options.dbType=='file') {
+			PhoneSync_Instance.filePutJSON(obj.key, obj);
 		}
-		else if (that.options.dbType=='indexeddb') {
-			that.idxPutJSON(obj.key, obj, onSave);
+		else if (PhoneSync_Instance.options.dbType=='indexeddb') {
+			PhoneSync_Instance.idxPutJSON(obj.key, obj);
 		}
 	}
 };
 PhoneSync.prototype.syncDownloads=function() {
-	var that=this;
-	if (!that.allowDownloads || !window.credentials || that.inSyncDownloads) {
-		return that.delaySyncDownloads();
+	if (!PhoneSync_Instance.allowDownloads || !window.credentials || PhoneSync_Instance.inSyncDownloads) {
+		return PhoneSync_Instance.delaySyncDownloads(PhoneSync_Instance.options.syncDownloadsTimeout);
 	}
-	if (that.apiAlreadyInQueue('syncDownloads')) {
+	if (PhoneSync_Instance.apiAlreadyInQueue('syncDownloads')) {
 		return;
 	}
-	if (that.disableFS) {
+	if (PhoneSync_Instance.disableFS) {
 		console.log('fs disabled');
 		return;
 	}
-	if (!that.loggedIn) {
-		return that.delaySyncDownloads(15000);
+	if (!PhoneSync_Instance.loggedIn) {
+		return PhoneSync_Instance.delaySyncDownloads(15000);
 	}
-	that.inSyncDownloads=true;
+	PhoneSync_Instance.inSyncDownloads=true;
 	clearTimeout(window.PhoneSync_timerSyncDownloads);
-	that.api(
+	PhoneSync_Instance.api(
 		'syncDownloads', {},
 		function(ret) {
 			// { relink headers and values if headers and values are separate
@@ -1112,26 +1166,23 @@ PhoneSync.prototype.syncDownloads=function() {
 				if (!$.isArray(v)) {
 					return;
 				}
-				var deletes=v;
-				var tableUpdatesChanged=false;
-				for (var i=0;i<v.length;++i) {
+				var deletes=v, tableUpdatesChanged=false, i=0;
+				for (;i<v.length;++i) {
 					var obj=v[i];
-					if (!that.tables[k].lastUpdate
-						|| obj.last_edited>that.tables[k].lastUpdate
-						) {
-						that.tables[k].lastUpdate=obj.last_edited;
+					if (!PhoneSync_Instance.tables[k].lastUpdate || obj.last_edited>PhoneSync_Instance.tables[k].lastUpdate) {
+						PhoneSync_Instance.tables[k].lastUpdate=obj.last_edited;
 						tableUpdatesChanged=true;
 						changes++;
 					}
 				}
 				if (tableUpdatesChanged) {
-					that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
+					PhoneSync_Instance.save( { 'key':'_tables', 'obj':PhoneSync_Instance.tables }, false, true);
 				}
-				for (var i=0;i<deletes.length;++i) {
+				for (i=0;i<deletes.length;++i) {
 					if (deletes[i].key===undefined) {
 						deletes[i].key=deletes[i].table_name+'-'+deletes[i].item_id;
 					}
-					that.delete(deletes[i].key);
+					PhoneSync_Instance.delete(deletes[i].key);
 					changes++;
 				}
 			});
@@ -1148,12 +1199,12 @@ PhoneSync.prototype.syncDownloads=function() {
 				function next() {
 					if (i==v.length) {
 						if (tableUpdatesChanged) {
-							that.save( { 'key':'_tables', 'obj':that.tables }, false, true);
+							PhoneSync_Instance.save( { 'key':'_tables', 'obj':PhoneSync_Instance.tables }, false, true);
 						}
 						tablesToDo--;
 						if (!tablesToDo) {
-							that.inSyncDownloads=false;
-							that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
+							PhoneSync_Instance.inSyncDownloads=false;
+							PhoneSync_Instance.delaySyncDownloads(changes?100:PhoneSync_Instance.options.syncDownloadsTimeout);
 						}
 						return;
 					}
@@ -1162,34 +1213,32 @@ PhoneSync.prototype.syncDownloads=function() {
 					if (obj===null) {
 						return setZeroTimeout(next);
 					}
-					if (!that.tables[k].lastUpdate
-						|| obj.last_edited>that.tables[k].lastUpdate
-						) {
-						that.tables[k].lastUpdate=obj.last_edited;
+					if (!PhoneSync_Instance.tables[k].lastUpdate || (''+obj.last_edited)>PhoneSync_Instance.tables[k].lastUpdate) {
+						PhoneSync_Instance.tables[k].lastUpdate=obj.last_edited;
 						tableUpdatesChanged=true;
 						changes++;
 					}
 					(function(k, obj) {
-						that.get(k+'-'+obj.id, function(ret) {
+						PhoneSync_Instance.get(k+'-'+obj.id, function(ret) {
 							if (ret===null) {
-								that.options.onDownload(k+'-'+obj.id, obj);
+								PhoneSync_Instance.options.onDownload(k+'-'+obj.id, obj);
 							}
-							if (that.uuid==obj.uuid) { // originally came from device
+							if (PhoneSync_Instance.uuid==obj.uuid) { // originally came from device
 								if (ret===null) {
-									that.save({
+									PhoneSync_Instance.save({
 										'key':k+'-'+obj.id,
 										'obj':obj
 									}, next, true);
-									that.options.onUpdate(k+'-'+obj.id, obj);
+									PhoneSync_Instance.options.onUpdate(k+'-'+obj.id, obj);
 								}
 								else setZeroTimeout(next);
 							}
 							else { // created somewhere else
-								that.save({
+								PhoneSync_Instance.save({
 									'key':k+'-'+obj.id,
 									'obj':obj
 								}, next, true);
-								that.options.onUpdate(k+'-'+obj.id, obj);
+								PhoneSync_Instance.options.onUpdate(k+'-'+obj.id, obj);
 							}
 						});
 					})(k, obj);
@@ -1197,70 +1246,71 @@ PhoneSync.prototype.syncDownloads=function() {
 				next();
 			});
 			if (!tablesToDo) {
-				that.inSyncDownloads=false;
-				that.delaySyncDownloads(changes?100:that.options.syncDownloadsTimeout)
+				PhoneSync_Instance.inSyncDownloads=false;
+				PhoneSync_Instance.delaySyncDownloads(changes?100:PhoneSync_Instance.options.syncDownloadsTimeout);
 			}
 		},
 		function(err) {
-			that.inSyncDownloads=false;
-			that.delaySyncDownloads(that.options.syncDownloadsTimeout);
+			PhoneSync_Instance.inSyncDownloads=false;
+			PhoneSync_Instance.delaySyncDownloads(PhoneSync_Instance.options.syncDownloadsTimeout);
 		}
 	);
 };
 PhoneSync.prototype.syncUploads=function() {
-	var that=this;
-	if (!that.loggedIn || !window.credentials) {
-		return that.delaySyncUploads(5000);
+	if (!PhoneSync_Instance.loggedIn || !window.credentials) {
+		return PhoneSync_Instance.delaySyncUploads(5000);
 	}
-	if (that.apiAlreadyInQueue('syncUploads')) {
+	if (PhoneSync_Instance.apiAlreadyInQueue('syncUploads')) {
 		return;
 	}
-	if (that.alreadyDoingSyncUpload) {
-		return that.delaySyncUploads(1);
+	if (PhoneSync_Instance.alreadyDoingSyncUpload) {
+		return PhoneSync_Instance.delaySyncUploads(1);
 	}
-	if (that.inSyncDownloads) {
-		that.apiQueueClear('syncDownloads');
+	if (PhoneSync_Instance.inSyncDownloads) {
+		PhoneSync_Instance.apiQueueClear('syncDownloads');
 	}
-	var numberOfUploads=++that.numberOfUploads;
-	if (that.disableFS) {
+	var numberOfUploads=++PhoneSync_Instance.numberOfUploads;
+	if (PhoneSync_Instance.disableFS) {
 		return;
 	}
-	that.get('_syncUploads', function(obj) {
-		if (!obj || obj===undefined || obj.keys===undefined || obj.keys.length==0) { // nothing to upload
-			that.delaySyncDownloads();
+	PhoneSync_Instance.get('_syncUploads', function(obj) {
+		if (!obj || obj===undefined || obj.keys===undefined || obj.keys.length===0) { // nothing to upload
+			PhoneSync_Instance.delaySyncDownloads();
 			return;
 		}
 		var key=obj.keys[0];
-		that.delayAllowDownloads();
+		PhoneSync_Instance.delayAllowDownloads();
 		if (/^_/.test(key)) { // items beginning with _ should not be uploaded
 			obj.keys.shift();
-			return that.save(obj, function() {
-				that.delaySyncUploads(1);
+			return PhoneSync_Instance.save(obj, function() {
+				console.log('syncUploads contained an invalid key, '+key+'. removed.');
+				PhoneSync_Instance.delaySyncUploads(1);
 			}, true);
 		}
-		if (that.alreadyDoingSyncUpload) {
-			return that.delaySyncUploads(1);
+		if (PhoneSync_Instance.alreadyDoingSyncUpload) {
+			console.log('already uploading.');
+			return PhoneSync_Instance.delaySyncUploads(1);
 		}
-		that.alreadyDoingSyncUpload=1;
-		that.get(key, function(ret) {
-			if (ret===null) { // item does not exist. remove from queue
-				console.log('object did not exist. removing.');
+		PhoneSync_Instance.alreadyDoingSyncUpload=1;
+		PhoneSync_Instance.get(key, function(ret) {
+			if (ret===null) { // item does not appear to exist?
+				console.warn('object with key '+key+' does not appear to exist. pushing to end of upload queue');
 				obj.keys.shift();
-				return that.save(obj, function() {
-					console.log('removed.');
-					that.alreadyDoingSyncUpload=0;
-					that.delaySyncUploads(1);
+				obj.keys.push(key);
+				return PhoneSync_Instance.save(obj, function() {
+					PhoneSync_Instance.alreadyDoingSyncUpload=0;
+					PhoneSync_Instance.delaySyncUploads(1);
 				}, true);
 			}
-			if (that.inSyncDownloads) {
-				that.inSyncDownloads=false;
-				that.networkInUse=false;
-				that.apiXHR.abort();
+			if (PhoneSync_Instance.inSyncDownloads) {
+				PhoneSync_Instance.inSyncDownloads=false;
+				PhoneSync_Instance.networkInUse=false;
+				PhoneSync_Instance.apiXHR.abort();
 			}
 			window.syncUploadsClearTimeout=setTimeout(function() {
-				that.alreadyDoingSyncUpload=0;
+				PhoneSync_Instance.alreadyDoingSyncUpload=0;
 			}, 60000);
-			that.api(
+			PhoneSync_Instance.api(
 				'syncUploads', {
 					'key':ret.key,
 					'obj':JSON.stringify(ret.obj)
@@ -1269,36 +1319,35 @@ PhoneSync.prototype.syncUploads=function() {
 					clearTimeout(window.syncUploadsClearTimeout);
 					if (obj.keys[0]!==key) {
 						console.warn('DUPLICATE UPLOADED?? '+key);
-						that.delaySyncUploads(1);
-						that.alreadyDoingSyncUpload=0;
+						PhoneSync_Instance.delaySyncUploads(1);
+						PhoneSync_Instance.alreadyDoingSyncUpload=0;
 						return;
 					}
-					that.alreadyDoingSyncUpload=0;
 					obj.keys.shift();
-					that.save(obj, function() { // remove that item from the queue
-						that.delaySyncUploads(1);
-						that.delaySyncDownloads();
+					PhoneSync_Instance.save(obj, function() { // remove PhoneSync_Instance item from the queue
+						PhoneSync_Instance.alreadyDoingSyncUpload=0;
+						PhoneSync_Instance.delaySyncUploads(1);
+						PhoneSync_Instance.delaySyncDownloads();
 						if (ret) {
-							that.options.onUpload(key, ret);
+							PhoneSync_Instance.options.onUpload(key, ret);
 						}
 					}, true);
 				},
 				function(err) { // fail
-					window.syncUploadsClearTimeout;
+					clearTimeout(window.syncUploadsClearTimeout);
 					console.log('upload failed');
-					that.alreadyDoingSyncUpload=0;
-					that.delaySyncUploads();
-					that.delaySyncDownloads();
+					PhoneSync_Instance.alreadyDoingSyncUpload=0;
+					PhoneSync_Instance.delaySyncUploads();
+					PhoneSync_Instance.delaySyncDownloads();
 				}
 			);
 		});
 	});
 };
 PhoneSync.prototype.tablesLastUpdateClear=function() {
-	for (var i=0;i<this.options.tables.length;++i) {
-		this.tables[this.options.tables[i]]={
+	for (var i=0;i<PhoneSync_Instance.options.tables.length;++i) {
+		PhoneSync_Instance.tables[PhoneSync_Instance.options.tables[i]]={
 			'lastUpdate':'0000-00-00 00:00:00'
-		}
+		};
 	}
 };
-var setZeroTimeout=function(a){if(a.postMessage){var b=[],c="asc0tmot",d=function(a){b.push(a),postMessage(c,"*")},e=function(d){if(d.source==a&&d.data==c){d.stopPropagation&&d.stopPropagation();if(b.length)try{b.shift()()}catch(e){setTimeout(function(a){return function(){throw a.stack||a}}(e),0)}b.length&&postMessage(c,"*")}};if(a.addEventListener)return addEventListener("message",e,!0),d;if(a.attachEvent)return attachEvent("onmessage",e),d}return setTimeout}(window);
